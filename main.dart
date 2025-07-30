@@ -232,20 +232,6 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   }
 
   void loadLevel(int level) {
-    // ---- LEVEL 10 SKIP CHECK ----
-    if (level == 10) {
-      SharedPreferences.getInstance().then((prefs) {
-        bool alreadyPlayed = prefs.getBool('coinLevel10Played') ?? false;
-        if (alreadyPlayed) {
-          currentLevel = 11;
-          loadLevel(11);
-        } else {
-          // Continue to setup level 10 below
-          _setupLevel(level);
-        }
-      });
-      return;
-    }
     _setupLevel(level);
   }
 
@@ -254,7 +240,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     portals.clear();
     hasExtraLife = false;
     orangeOrbImmune = false;
-
+    // Remove any existing orange orb before new level setup
     if (activeOrangeOrb != null) {
       activeOrangeOrb!.removeFromParent();
       activeOrangeOrb = null;
@@ -304,11 +290,12 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         break;
       case 10:
         newPortalCount = 6;
-        numDangerous = 0;
+        numDangerous = 4;
         break;
       default:
         newPortalCount = portalCount + level - 1;
-        numDangerous = min((newPortalCount / 3).round(), 5);
+        numDangerous = (newPortalCount / 4)
+            .round(); // kırmızı sayısını maviye göre dengeli ayarla
     }
 
     final dangerousIndices = List.generate(newPortalCount, (i) => i)..shuffle();
@@ -322,10 +309,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       final isDanger = dangerSet.contains(i);
       final portal = Portal(angle, portalRadius, isDangerous: isDanger);
 
-      if (level == 10) {
-        portal.score = 1;
-        portal.rotationSpeed = 1.0;
-      } else if (isDanger) {
+      if (isDanger) {
         int baseMax = -5 - level;
         int baseMin = -10 - level;
 
@@ -342,8 +326,11 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         portal.score = Random().nextInt(5) + 1;
       }
 
-      if (level >= 5 && level != 10) {
-        double spinSpeed = 0.5 + level * 0.05;
+      // --- PATCH: Level 5+ spin speed logic ---
+      if (level >= 5) {
+        double spinSpeed = level <= 25
+            ? 0.4 + level * 0.035
+            : 0.4 + 25 * 0.035; // Level 25 sonrası sabit hız
         if (level == 8) {
           portal.rotationSpeed = -spinSpeed; // Sadece level 8 ters döner
         } else {
@@ -354,19 +341,6 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       portal.position = center;
       portals.add(portal);
       add(portal);
-    }
-
-    // Level 10: coin collection stage
-    if (level == 10) {
-      // No dangerous portals, all blue, respawn after 2 seconds, 10s countdown
-      Future.delayed(Duration(seconds: 10), () async {
-        if (currentLevel == 10) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('coinLevel10Played', true);
-          currentLevel = 11;
-          loadLevel(currentLevel);
-        }
-      });
     }
 
     if (currentLevel >= 6 && Random().nextDouble() < 1 / 3 && level != 10) {
@@ -382,7 +356,9 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
     if (currentLevel >= 20 && Random().nextDouble() < 1 / 5 && level != 10) {
       Future.delayed(Duration(seconds: Random().nextInt(5) + 2), () {
+        // Only spawn a new orange orb if none is active
         if (!isLoaded || !children.contains(arrow)) return;
+        if (activeOrangeOrb != null) return;
         final angle = Random().nextDouble() * 2 * pi;
         final orange = OrangeOrb(angle: angle, center: size / 2);
         activeOrangeOrb = orange;
@@ -579,6 +555,19 @@ class RotatingArrowGame extends FlameGame with TapDetector {
           comboCount = 0;
           remove(balls[i]);
           balls.removeAt(i);
+        }
+      }
+    }
+
+    // --- Orange Orb collision with Ball ---
+    if (activeOrangeOrb != null) {
+      for (final ball in balls) {
+        final ballPos =
+            size / 2 + Vector2(cos(ball.angle), sin(ball.angle)) * ball.radius;
+        if ((activeOrangeOrb!.position - ballPos).length < 20) {
+          activeOrangeOrb!.removeFromParent();
+          activeOrangeOrb = null;
+          break;
         }
       }
     }
