@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:async' as dart_async;
 import 'package:flutter/services.dart';
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
@@ -145,6 +146,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   bool orangeOrbImmune = false;
   OrangeOrb? activeOrangeOrb;
 
+  dart_async.Timer? directionSwapTimer;
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
@@ -247,6 +250,11 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     }
 
     for (final child in children.whereType<Portal>().toList()) {
+      remove(child);
+    }
+
+    // --- PATCH: Remove DeathRing if present ---
+    for (final child in children.whereType<DeathRing>().toList()) {
       remove(child);
     }
 
@@ -366,10 +374,37 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       });
     }
 
+    // --- PATCH: Add DeathRing for level 13-20 ---
+    if (level >= 13 && level <= 20) {
+      final deathRing = DeathRing(
+        radius: min(size.x, size.y) / 2,
+        color: Colors.redAccent.withOpacity(0.5),
+      );
+      add(deathRing);
+    }
+
     arrow.speed = baseSpeed;
+    directionSwapTimer?.cancel();
+    if (level >= 18 && level <= 20) {
+      directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 10), (
+        _,
+      ) {
+        startSmoothDirectionSwap(portals);
+      });
+    } else if (level == 24 || level == 25) {
+      directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 5), (_) {
+        startSmoothDirectionSwap(portals);
+      });
+    }
 
     levelText.text = 'Level: $currentLevel';
     isLoaded = true;
+  }
+
+  @override
+  void onRemove() {
+    directionSwapTimer?.cancel();
+    super.onRemove();
   }
 
   @override
@@ -744,6 +779,26 @@ class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
       }
     } else {
       hitTimer += dt;
+    }
+    // --- PATCH: DeathRing collision for levels 13-17 (center-based calculation) ---
+    if (!hit && gameRef.currentLevel >= 13 && gameRef.currentLevel <= 17) {
+      final ballCenter = position;
+      final centerToBall = (ballCenter - gameRef.size / 2).length;
+      final deathRing = gameRef.children.whereType<DeathRing>().firstOrNull;
+      if (deathRing != null) {
+        final deathRingVisualRadius = deathRing.size.x / 2;
+        if ((centerToBall - deathRingVisualRadius).abs() <= size.x / 2) {
+          gameRef.playWrongSound();
+          gameRef.add(
+            GrowingCircleEffect(
+              center: gameRef.size / 2,
+              color: Colors.redAccent,
+              maxRadius: gameRef.portalRadius + 10,
+            ),
+          );
+          Future.microtask(() => gameRef.loadLevel(gameRef.currentLevel));
+        }
+      }
     }
   }
 
@@ -1134,5 +1189,62 @@ class OrangeOrb extends PositionComponent {
   bool collidesWithArrow(Arrow arrow) {
     final arrowPos = center + Vector2(cos(arrow.angle), sin(arrow.angle)) * 30;
     return (position - arrowPos).length < 25;
+  }
+}
+
+// --- DEATH RING CLASS ---
+class DeathRing extends PositionComponent with HasGameRef<RotatingArrowGame> {
+  final double radius;
+  final Color color;
+
+  DeathRing({required this.radius, required this.color}) {
+    size = Vector2.all(radius * 2);
+    anchor = Anchor.center;
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+
+    final center = Offset(size.x / 2, size.y / 2);
+    canvas.drawCircle(center, radius, paint);
+  }
+
+  @override
+  void update(double dt) {
+    position = gameRef.size / 2;
+  }
+}
+
+// Smoothly reverses the direction of all portals' rotation
+void startSmoothDirectionSwap(List<Portal> portals) {
+  for (var portal in portals) {
+    final originalSpeed = portal.rotationSpeed;
+    double slowdownStep = originalSpeed / 30;
+    int steps = 15;
+    dart_async.Timer.periodic(Duration(milliseconds: 100), (timer) {
+      portal.rotationSpeed -= slowdownStep;
+      steps--;
+      if (steps == 0) {
+        timer.cancel();
+        dart_async.Timer(Duration(milliseconds: 200), () {
+          int stepsBack = 15;
+          double accelerateStep = originalSpeed.abs() / 30;
+          dart_async.Timer.periodic(Duration(milliseconds: 100), (revTimer) {
+            portal.rotationSpeed -= portal.rotationSpeed > 0
+                ? accelerateStep
+                : -accelerateStep;
+            stepsBack--;
+            if (stepsBack == 0) {
+              portal.rotationSpeed = -originalSpeed;
+              revTimer.cancel();
+            }
+          });
+        });
+      }
+    });
   }
 }
