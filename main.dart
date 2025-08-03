@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'dart:async' as dart_async;
+import 'package:flame/flame.dart';
 import 'package:flutter/services.dart';
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
@@ -8,11 +9,11 @@ import 'package:flame/input.dart';
 import 'package:flame/effects.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'dart:ui';
-import 'package:flutter/animation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  Flame.device.fullScreen();
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -94,9 +95,6 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   Future<void> loadCoinScore() async {
     final prefs = await SharedPreferences.getInstance();
     totalScore = prefs.getInt('totalScore') ?? 0;
-    if (scoreText != null) {
-      scoreText.text = 'Coins: $totalScore';
-    }
   }
 
   Future<void> saveCoinScore() async {
@@ -301,8 +299,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         numDangerous = 4;
         break;
       default:
-        newPortalCount = portalCount + level - 1;
-        numDangerous = (newPortalCount / 4)
+        newPortalCount = portalCount + level - 4;
+        numDangerous = (newPortalCount / 3)
             .round(); // kırmızı sayısını maviye göre dengeli ayarla
     }
 
@@ -310,7 +308,6 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     final dangerSet = dangerousIndices.take(numDangerous).toSet();
 
     double baseSpeed = rotationSpeed + level * 0.2;
-    bool reverseDirection = level >= 8;
 
     for (int i = 0; i < newPortalCount; i++) {
       double angle = (2 * pi / newPortalCount) * i;
