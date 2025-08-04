@@ -1,0 +1,579 @@
+import 'dart:math';
+import 'dart:async' as dart_async;
+import 'package:flame/components.dart';
+import 'package:flame/game.dart';
+import 'package:flutter/material.dart';
+import 'package:flame/input.dart';
+import 'package:flame/effects.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:oyun1/main.dart';
+
+class RotatingArrowGame extends FlameGame with TapDetector {
+  bool isLoaded = false;
+  Future<void> init() async {
+    await loadCoinScore();
+    scoreText.text = 'Coins: $totalScore';
+  }
+
+  final int portalCount = 6;
+  final double portalRadius = 150;
+  final List<Portal> portals = [];
+  List<Ball> balls = [];
+  late Arrow arrow;
+
+  double rotationSpeed = 2.0; // ok ve topun açısal hızı (radyan/sn)
+
+  int totalScore = 0;
+  Future<void> loadCoinScore() async {
+    final prefs = await SharedPreferences.getInstance();
+    totalScore = prefs.getInt('totalScore') ?? 0;
+  }
+
+  Future<void> saveCoinScore() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('totalScore', totalScore);
+  }
+
+  // --- Arrow Inventory ---
+  Set<int> ownedArrows = {0};
+
+  Future<void> saveOwnedArrows() async {
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setStringList(
+      'ownedArrows',
+      ownedArrows.map((e) => e.toString()).toList(),
+    );
+  }
+
+  Future<void> loadOwnedArrows() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('ownedArrows');
+    if (list != null) {
+      ownedArrows = list.map(int.parse).toSet();
+    }
+  }
+
+  late TextComponent scoreText;
+
+  late TextComponent hitMessageText;
+  double hitMessageTimer = 0;
+
+  int currentLevel = 1;
+
+  late TextComponent levelText;
+
+  int comboCount = 0;
+
+  late final AudioPlayer correctPlayer;
+  late final AudioPlayer wrongPlayer;
+
+  int currentArrowSkin = 0; // 0: beyaz, 1: altın, 2: gölgeli
+
+  // --- Extra Life Mechanic ---
+  bool hasExtraLife = false;
+
+  // --- Orange Orb Mechanic ---
+  bool orangeOrbImmune = false;
+  OrangeOrb? activeOrangeOrb;
+
+  dart_async.Timer? directionSwapTimer;
+
+  @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+    final center = size / 2;
+
+    // Ok oluştur ve ekle
+    arrow = Arrow(angle: 0, speed: rotationSpeed, center: center);
+    arrow.position = center;
+    add(arrow);
+
+    // Coins yazısı - ekran üst ortada
+    scoreText = TextComponent(
+      text: 'Coins: 0',
+      position: Vector2(center.x, 20),
+      anchor: Anchor.topCenter,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    add(scoreText);
+    await loadCoinScore();
+    scoreText.text = 'Coins: $totalScore';
+
+    // Arrow inventory yükle
+    await loadOwnedArrows();
+
+    // Level göstergesi
+    levelText = TextComponent(
+      text: 'Level: $currentLevel',
+      position: Vector2(center.x, 60), // Puan yazısının biraz altında
+      anchor: Anchor.topCenter,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: Colors.yellowAccent,
+          fontSize: 22,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    add(levelText);
+
+    // Level yükle
+    loadLevel(currentLevel);
+
+    // Vuruş mesajı - ekran alt ortada (biraz daha yukarı alındı)
+    hitMessageText = TextComponent(
+      text: '',
+      position: Vector2(size.x / 2, size.y - 140),
+      anchor: Anchor.bottomCenter,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: Colors.greenAccent,
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    add(hitMessageText);
+
+    // Overlay menü butonunu göster
+    overlays.add('levelMenuButton');
+    overlays.add('shopButton');
+
+    // Ses oynatıcıları başlat
+    correctPlayer = AudioPlayer()..setReleaseMode(ReleaseMode.stop);
+    wrongPlayer = AudioPlayer()..setReleaseMode(ReleaseMode.stop);
+
+    await correctPlayer.setSource(AssetSource('correct.mp3'));
+    await wrongPlayer.setSource(AssetSource('wrong.mp3'));
+    isLoaded = true;
+  }
+
+  void playCorrectSound() {
+    correctPlayer.seek(Duration.zero);
+    correctPlayer.resume();
+  }
+
+  void playWrongSound() {
+    wrongPlayer.seek(Duration.zero);
+    wrongPlayer.resume();
+  }
+
+  void loadLevel(int level) {
+    _setupLevel(level);
+  }
+
+  void _setupLevel(int level) {
+    isLoaded = false;
+    portals.clear();
+    hasExtraLife = false;
+    orangeOrbImmune = false;
+    // Remove any existing orange orb before new level setup
+    if (activeOrangeOrb != null) {
+      activeOrangeOrb!.removeFromParent();
+      activeOrangeOrb = null;
+    }
+
+    for (final child in children.whereType<Portal>().toList()) {
+      remove(child);
+    }
+
+    // --- PATCH: Remove DeathRing if present ---
+    for (final child in children.whereType<DeathRing>().toList()) {
+      remove(child);
+    }
+
+    final center = size / 2;
+
+    int newPortalCount;
+    int numDangerous = 0;
+
+    switch (level) {
+      case 1:
+        newPortalCount = 4;
+        numDangerous = 0;
+        break;
+      case 2:
+        newPortalCount = 6; // 5 mavi 1 kırmızı
+        numDangerous = 1;
+        break;
+      case 3:
+        newPortalCount = 6;
+        numDangerous = 2;
+        break;
+      case 4:
+        newPortalCount = 8;
+        numDangerous = 3;
+        break;
+      case 5:
+        newPortalCount = 6;
+        numDangerous = 2;
+        break;
+      case 6:
+        newPortalCount = 8;
+        numDangerous = 3;
+        break;
+      case 7:
+        newPortalCount = 6;
+        numDangerous = 3;
+        break;
+      case 8:
+        newPortalCount = 6;
+        numDangerous = 2;
+        break;
+      case 10:
+        newPortalCount = 6;
+        numDangerous = 4;
+        break;
+      default:
+        newPortalCount = portalCount + level - 4;
+        numDangerous = (newPortalCount / 3)
+            .round(); // kırmızı sayısını maviye göre dengeli ayarla
+    }
+
+    final dangerousIndices = List.generate(newPortalCount, (i) => i)..shuffle();
+    final dangerSet = dangerousIndices.take(numDangerous).toSet();
+
+    double baseSpeed = rotationSpeed + level * 0.2;
+
+    for (int i = 0; i < newPortalCount; i++) {
+      double angle = (2 * pi / newPortalCount) * i;
+      final isDanger = dangerSet.contains(i);
+      final portal = Portal(angle, portalRadius, isDangerous: isDanger);
+
+      if (isDanger) {
+        int baseMax = -5 - level;
+        int baseMin = -10 - level;
+
+        if (baseMax < baseMin) {
+          final temp = baseMin;
+          baseMin = baseMax;
+          baseMax = temp;
+        }
+
+        int range = baseMax - baseMin + 1;
+
+        portal.score = range > 0 ? baseMin + Random().nextInt(range) : baseMin;
+      } else {
+        portal.score = Random().nextInt(5) + 1;
+      }
+
+      // --- PATCH: Level 5+ spin speed logic ---
+      if (level >= 5) {
+        double spinSpeed = level <= 25
+            ? 0.4 + level * 0.035
+            : 0.4 + 25 * 0.035; // Level 25 sonrası sabit hız
+        if (level == 8) {
+          portal.rotationSpeed = -spinSpeed; // Sadece level 8 ters döner
+        } else {
+          portal.rotationSpeed = spinSpeed; // Diğerleri normal döner
+        }
+      }
+
+      portal.position = center;
+      portals.add(portal);
+      add(portal);
+    }
+
+    if (currentLevel >= 6 && Random().nextDouble() < 1 / 3 && level != 10) {
+      final nonDangerous = portals
+          .where((p) => !p.isDangerous && !p.isGreen)
+          .toList();
+      if (nonDangerous.isNotEmpty) {
+        final selected = nonDangerous[Random().nextInt(nonDangerous.length)];
+        selected.isGreen = true;
+        selected.score = 0;
+      }
+    }
+
+    if (currentLevel >= 20 && Random().nextDouble() < 1 / 5 && level != 10) {
+      Future.delayed(Duration(seconds: Random().nextInt(5) + 2), () {
+        // Only spawn a new orange orb if none is active
+        if (!isLoaded || !children.contains(arrow)) return;
+        if (activeOrangeOrb != null) return;
+        final angle = Random().nextDouble() * 2 * pi;
+        final orange = OrangeOrb(angle: angle, center: size / 2);
+        activeOrangeOrb = orange;
+        add(orange);
+      });
+    }
+
+    // --- PATCH: Add DeathRing for level 13-20 ---
+    if (level >= 13 && level <= 20) {
+      final deathRing = DeathRing(
+        radius: min(size.x, size.y) / 2,
+        color: Colors.redAccent.withOpacity(0.5),
+      );
+      add(deathRing);
+    }
+
+    arrow.speed = baseSpeed;
+    directionSwapTimer?.cancel();
+    if (level >= 18 && level <= 20) {
+      directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 10), (
+        _,
+      ) {
+        startSmoothDirectionSwap(portals);
+      });
+    } else if (level == 24 || level == 25) {
+      directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 5), (_) {
+        startSmoothDirectionSwap(portals);
+      });
+    }
+
+    levelText.text = 'Level: $currentLevel';
+    isLoaded = true;
+  }
+
+  @override
+  void onRemove() {
+    directionSwapTimer?.cancel();
+    super.onRemove();
+  }
+
+  @override
+  void update(double dt) {
+    if (!isLoaded) return;
+    super.update(dt);
+
+    // Oku döndür
+    arrow.updateAngle(dt);
+
+    // Tüm topları güncelle
+    for (int i = balls.length - 1; i >= 0; i--) {
+      balls[i].updatePosition(dt);
+
+      if (balls[i].hasReachedTarget(portals)) {
+        if (!balls[i].hit) {
+          balls[i].markHit();
+
+          // Hangi portala vurduğunu bul ve puan ekle
+          for (var p in portals) {
+            final portalPos =
+                size / 2 + Vector2(cos(p.angle), sin(p.angle)) * p.radius;
+            final ballPos =
+                size / 2 +
+                Vector2(cos(balls[i].angle), sin(balls[i].angle)) *
+                    balls[i].radius;
+            final distance = (portalPos - ballPos).length;
+            final collisionDistance = (p.size.x / 2) + (balls[i].size.x / 2);
+
+            // --- YENİ BLOK ---
+            if (distance < collisionDistance) {
+              // Handle green portal (extra life)
+              if (p.isGreen && children.contains(p)) {
+                hasExtraLife = true;
+                hitMessageText.text = 'Extra Life!';
+                hitMessageText.textRenderer = TextPaint(
+                  style: TextStyle(
+                    color: Colors.greenAccent,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                );
+                hitMessageTimer = 0;
+
+                portals.remove(p);
+                p.removeFromParent();
+
+                balls[i].removeFromParent();
+                balls.removeAt(i);
+                break;
+              }
+              // Handle dangerous portal (red)
+              if (p.isDangerous) {
+                if (hasExtraLife) {
+                  hasExtraLife = false;
+                  orangeOrbImmune = false;
+                  hitMessageText.text = 'Extra life used!';
+                  hitMessageText.textRenderer = TextPaint(
+                    style: TextStyle(
+                      color: Colors.greenAccent,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  );
+                  hitMessageTimer = 0;
+
+                  remove(balls[i]);
+                  balls.removeAt(i);
+                  break;
+                }
+                playWrongSound();
+                comboCount = 0;
+                totalScore -= p.score.abs();
+                if (totalScore < 0) totalScore = 0;
+                saveCoinScore();
+                scoreText.text = 'Coins: $totalScore';
+                hitMessageText.text = '-${p.score.abs()}';
+                hitMessageText.textRenderer = TextPaint(
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                );
+                hitMessageTimer = 0;
+
+                add(
+                  GrowingCircleEffect(
+                    center: size / 2,
+                    color: Colors.redAccent,
+                    maxRadius: portalRadius + 10,
+                  ),
+                );
+
+                Future.microtask(() => loadLevel(currentLevel));
+                levelText.text = 'Level: $currentLevel';
+
+                remove(balls[i]);
+                balls.removeAt(i);
+                break;
+              } else {
+                playCorrectSound();
+                // Mavi topa çarpıldığında puan ekle
+                comboCount++;
+                totalScore += p.score * comboCount;
+                saveCoinScore();
+                scoreText.text = 'Coins: $totalScore';
+                hitMessageText.text = '+${p.score * comboCount} (x$comboCount)';
+                hitMessageText.textRenderer = TextPaint(
+                  style: TextStyle(
+                    color: Colors.blueAccent,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                );
+                hitMessageTimer = 0;
+
+                p.add(
+                  ScaleEffect.to(
+                    Vector2.zero(),
+                    EffectController(duration: 0.5, curve: Curves.easeOut),
+                    onComplete: () async {
+                      remove(p);
+                      portals.remove(p);
+                      // --- LEVEL ADVANCEMENT HANDLING WITH LEVEL 10 SKIP ---
+                      if (portals
+                          .where(
+                            (portal) => !portal.isDangerous && !portal.isGreen,
+                          )
+                          .isEmpty) {
+                        currentLevel++;
+                        final prefs = await SharedPreferences.getInstance();
+                        bool level10Played =
+                            prefs.getBool('coinLevel10Played') ?? false;
+                        if (currentLevel == 10 && level10Played) {
+                          currentLevel = 11;
+                        }
+                        add(
+                          GrowingCircleEffect(
+                            center: size / 2,
+                            color: Colors.blueAccent,
+                            maxRadius: portalRadius + 10,
+                          ),
+                        );
+                        Future.microtask(() => loadLevel(currentLevel));
+                        hitMessageText.text = 'Level $currentLevel';
+                        hitMessageText.textRenderer = TextPaint(
+                          style: TextStyle(
+                            color: Colors.yellowAccent,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                        hitMessageTimer = 0;
+                        levelText.text = 'Level: $currentLevel';
+                      }
+                    },
+                  ),
+                );
+
+                remove(balls[i]);
+                balls.removeAt(i);
+                break;
+              }
+            }
+            // --- YENİ BLOK SONU ---
+          }
+        }
+      }
+      // Vurulduktan sonra 0.5 sn bekle, sonra kaldır
+      else if (balls[i].hit && balls[i].hitTimer > 0.5) {
+        remove(balls[i]);
+        balls.removeAt(i);
+      }
+      // Vurulmadıysa dışarı çıkma ve ekran dışı kontrolü yap, yoksa bırak dönsün
+      else if (!balls[i].hit) {
+        if (balls[i].isOutOfRange(portalRadius + 150)) {
+          // Dışarı çıkınca kaldır (yarıçapı biraz daha büyüttük)
+          comboCount = 0;
+          remove(balls[i]);
+          balls.removeAt(i);
+        } else if (balls[i].isOffScreen(size)) {
+          comboCount = 0;
+          remove(balls[i]);
+          balls.removeAt(i);
+        }
+      }
+    }
+
+    // --- Orange Orb collision with Ball ---
+    if (activeOrangeOrb != null) {
+      for (final ball in balls) {
+        final ballPos =
+            size / 2 + Vector2(cos(ball.angle), sin(ball.angle)) * ball.radius;
+        if ((activeOrangeOrb!.position - ballPos).length < 20) {
+          activeOrangeOrb!.removeFromParent();
+          activeOrangeOrb = null;
+          break;
+        }
+      }
+    }
+
+    // --- Orange Orb collision with Arrow ---
+    if (activeOrangeOrb != null && activeOrangeOrb!.collidesWithArrow(arrow)) {
+      if (orangeOrbImmune) {
+        hasExtraLife = false;
+        orangeOrbImmune = false;
+      } else {
+        playWrongSound();
+        Future.microtask(() => loadLevel(currentLevel));
+        hitMessageText.text = 'Hit by Orange Orb!';
+      }
+      activeOrangeOrb!.removeFromParent();
+      activeOrangeOrb = null;
+    }
+
+    // Vuruş mesajını 1.5 sn göster sonra temizle
+    if (hitMessageText.text.isNotEmpty) {
+      hitMessageTimer += dt;
+      if (hitMessageTimer > 1.5) {
+        hitMessageText.text = '';
+        hitMessageTimer = 0;
+      }
+    }
+  }
+
+  @override
+  void onTap() {
+    final center = size / 2;
+    final ball = Ball(
+      angle: arrow.angle,
+      radius: 0,
+      center: center,
+      speedRadius: 100 + currentLevel * 10,
+      speedAngle: arrow.speed,
+      color: Colors.white,
+    );
+    balls.add(ball);
+    add(ball);
+  }
+}
