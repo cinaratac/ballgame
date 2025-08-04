@@ -9,9 +9,12 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:oyun1/main.dart';
+import 'parts/ui/level_coin_display.dart';
 
 class RotatingArrowGame extends FlameGame with TapDetector {
   bool isLoaded = false;
+  // --- PATCH: Shooting allowed flag ---
+  bool allowShooting = true;
   Future<void> init() async {
     await loadCoinScore();
     scoreText.text = 'Coins: $totalScore';
@@ -56,13 +59,12 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   }
 
   late TextComponent scoreText;
+  late TextComponent levelText;
 
   late TextComponent hitMessageText;
   double hitMessageTimer = 0;
 
   int currentLevel = 1;
-
-  late TextComponent levelText;
 
   int comboCount = 0;
 
@@ -90,40 +92,26 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     arrow.position = center;
     add(arrow);
 
-    // Coins yazısı - ekran üst ortada
-    scoreText = TextComponent(
-      text: 'Coins: 0',
-      position: Vector2(center.x, 20),
-      anchor: Anchor.topCenter,
-      textRenderer: TextPaint(
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-    add(scoreText);
-    await loadCoinScore();
-    scoreText.text = 'Coins: $totalScore';
-
     // Arrow inventory yükle
     await loadOwnedArrows();
 
-    // Level göstergesi
-    levelText = TextComponent(
-      text: 'Level: $currentLevel',
-      position: Vector2(center.x, 60), // Puan yazısının biraz altında
-      anchor: Anchor.topCenter,
-      textRenderer: TextPaint(
-        style: TextStyle(
-          color: Colors.yellowAccent,
-          fontSize: 22,
-          fontWeight: FontWeight.bold,
-        ),
+    // Add score and level text for internal tracking (do not add to scene)
+    scoreText = TextComponent();
+    levelText = TextComponent();
+    await loadCoinScore();
+
+    // Add LevelCoinDisplay (handles level and coins display)
+    add(
+      LevelCoinDisplay(
+        level: currentLevel,
+        coins: totalScore,
+        position: Vector2(size.x / 2, 0),
       ),
     );
-    add(levelText);
+
+    // Restore currentLevel from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    currentLevel = prefs.getInt('currentLevel') ?? currentLevel;
 
     // Level yükle
     loadLevel(currentLevel);
@@ -170,7 +158,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     _setupLevel(level);
   }
 
-  void _setupLevel(int level) {
+  void _setupLevel(int level) async {
     isLoaded = false;
     portals.clear();
     hasExtraLife = false;
@@ -232,16 +220,68 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         newPortalCount = 6;
         numDangerous = 4;
         break;
+      case 25:
+        newPortalCount = portalCount + level - 4;
+        numDangerous = (newPortalCount / 3).round();
+        break;
+      case 26:
+        newPortalCount = 4; // 2 blue, 2 red
+        numDangerous = 2;
+        break;
+      case 27:
+      case 28:
+      case 29:
+      case 30:
+      case 31:
+      case 32:
+      case 33:
+      case 34:
+      case 35:
+      case 36:
+      case 37:
+      case 38:
+      case 39:
+      case 40:
+        newPortalCount =
+            4 + (level - 26) ~/ 2; // gradually increase number of balls
+        numDangerous = newPortalCount ~/ 2;
+        break;
       default:
         newPortalCount = portalCount + level - 4;
         numDangerous = (newPortalCount / 3)
             .round(); // kırmızı sayısını maviye göre dengeli ayarla
     }
 
-    final dangerousIndices = List.generate(newPortalCount, (i) => i)..shuffle();
-    final dangerSet = dangerousIndices.take(numDangerous).toSet();
+    bool hasThreeAdjacent(Set<int> set, int total) {
+      for (int i = 0; i < total; i++) {
+        if (set.contains(i) &&
+            set.contains((i + 1) % total) &&
+            set.contains((i + 2) % total)) {
+          return true;
+        }
+      }
+      return false;
+    }
 
-    double baseSpeed = rotationSpeed + level * 0.2;
+    final dangerSet = <int>{};
+    int attempts = 0;
+    while (attempts < 1000) {
+      final candidate = <int>{};
+      final indices = List.generate(newPortalCount, (i) => i)..shuffle();
+      for (final idx in indices) {
+        candidate.add(idx);
+        if (candidate.length == numDangerous) break;
+      }
+      if (!hasThreeAdjacent(candidate, newPortalCount)) {
+        dangerSet.addAll(candidate);
+        break;
+      }
+      attempts++;
+    }
+
+    double baseSpeed = level <= 23
+        ? rotationSpeed + level * 0.2
+        : rotationSpeed + 23 * 0.2;
 
     for (int i = 0; i < newPortalCount; i++) {
       double angle = (2 * pi / newPortalCount) * i;
@@ -265,11 +305,18 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         portal.score = Random().nextInt(5) + 1;
       }
 
-      // --- PATCH: Level 5+ spin speed logic ---
-      if (level >= 5) {
-        double spinSpeed = level <= 25
-            ? 0.4 + level * 0.035
-            : 0.4 + 25 * 0.035; // Level 25 sonrası sabit hız
+      // --- PATCH: Level 5+ spin speed logic, custom for 27-40 ---
+      if (level >= 5 && level != 13 && level != 14 && level != 26) {
+        double spinSpeed;
+        if (level <= 25) {
+          spinSpeed = 0.4 + level * 0.035;
+        } else if (level >= 27 && level <= 40) {
+          spinSpeed =
+              0.1 +
+              (level - 27) * 0.1; // starts very slow at level 27 and grows
+        } else {
+          spinSpeed = 0.4 + (level - 25) * 0.02 + 0.4 + 25 * 0.035;
+        }
         if (level == 8) {
           portal.rotationSpeed = -spinSpeed; // Sadece level 8 ters döner
         } else {
@@ -309,7 +356,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     if (level >= 13 && level <= 20) {
       final deathRing = DeathRing(
         radius: min(size.x, size.y) / 2,
-        color: Colors.redAccent.withOpacity(0.5),
+        color: const Color.fromARGB(255, 159, 44, 44),
       );
       add(deathRing);
     }
@@ -326,9 +373,77 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 5), (_) {
         startSmoothDirectionSwap(portals);
       });
+    } else if (level == 26) {
+      // No rotation and no direction swap
+      // --- PATCH: Level 26 countdown and masking logic ---
+      // PATCH: Disallow shooting during countdown
+      allowShooting = false;
+      final countdownText = TextComponent(
+        text: '5',
+        position: Vector2(size.x / 2, size.y / 2 - 100),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 60,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+      add(countdownText);
+
+      int counter = 5;
+      dart_async.Timer.periodic(Duration(seconds: 1), (timer) {
+        counter--;
+        if (counter > 0) {
+          countdownText.text = '$counter';
+        } else {
+          countdownText.removeFromParent();
+          timer.cancel();
+          // PATCH: Allow shooting after countdown
+          allowShooting = true;
+          for (final p in portals) {
+            p.isMasked = true;
+          }
+        }
+      });
+    } else if (level >= 27 && level <= 40) {
+      allowShooting = false;
+      final countdownText = TextComponent(
+        text: '5',
+        position: Vector2(size.x / 2, size.y / 2 - 100),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 60,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+      add(countdownText);
+
+      int counter = 5;
+      dart_async.Timer.periodic(Duration(seconds: 1), (timer) {
+        counter--;
+        if (counter > 0) {
+          countdownText.text = '$counter';
+        } else {
+          countdownText.removeFromParent();
+          timer.cancel();
+          allowShooting = true;
+          for (final p in portals) {
+            p.isMasked = true;
+          }
+        }
+      });
     }
 
+    scoreText.text = 'Coins: $totalScore';
     levelText.text = 'Level: $currentLevel';
+    // Save currentLevel to SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('currentLevel', currentLevel);
     isLoaded = true;
   }
 
@@ -381,6 +496,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 hitMessageTimer = 0;
 
                 portals.remove(p);
+
                 p.removeFromParent();
 
                 balls[i].removeFromParent();
@@ -415,7 +531,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 hitMessageText.text = '-${p.score.abs()}';
                 hitMessageText.textRenderer = TextPaint(
                   style: TextStyle(
-                    color: Colors.redAccent,
+                    color: const Color.fromARGB(255, 159, 44, 44),
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -425,7 +541,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 add(
                   GrowingCircleEffect(
                     center: size / 2,
-                    color: Colors.redAccent,
+                    color: const Color.fromARGB(255, 159, 44, 44),
                     maxRadius: portalRadius + 10,
                   ),
                 );
@@ -436,7 +552,11 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 remove(balls[i]);
                 balls.removeAt(i);
                 break;
-              } else {
+              } else if (!p.isDangerous && !p.isGreen) {
+                // --- Patch: Add guard to prevent double-hitting blue portals ---
+                if (p.children.isNotEmpty || !children.contains(p)) {
+                  break;
+                }
                 playCorrectSound();
                 // Mavi topa çarpıldığında puan ekle
                 comboCount++;
@@ -446,7 +566,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 hitMessageText.text = '+${p.score * comboCount} (x$comboCount)';
                 hitMessageText.textRenderer = TextPaint(
                   style: TextStyle(
-                    color: Colors.blueAccent,
+                    color: const Color.fromARGB(255, 20, 72, 162),
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -458,8 +578,9 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                     Vector2.zero(),
                     EffectController(duration: 0.5, curve: Curves.easeOut),
                     onComplete: () async {
-                      remove(p);
-                      portals.remove(p);
+                      if (children.contains(p)) {
+                        p.removeFromParent();
+                      }
                       // --- LEVEL ADVANCEMENT HANDLING WITH LEVEL 10 SKIP ---
                       if (portals
                           .where(
@@ -476,7 +597,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                         add(
                           GrowingCircleEffect(
                             center: size / 2,
-                            color: Colors.blueAccent,
+                            color: const Color.fromARGB(255, 20, 72, 162),
                             maxRadius: portalRadius + 10,
                           ),
                         );
@@ -495,6 +616,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                     },
                   ),
                 );
+                // Remove portal from list immediately after effect is added
+                portals.remove(p);
 
                 remove(balls[i]);
                 balls.removeAt(i);
@@ -527,12 +650,15 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
     // --- Orange Orb collision with Ball ---
     if (activeOrangeOrb != null) {
-      for (final ball in balls) {
+      for (int i = balls.length - 1; i >= 0; i--) {
+        final ball = balls[i];
         final ballPos =
             size / 2 + Vector2(cos(ball.angle), sin(ball.angle)) * ball.radius;
         if ((activeOrangeOrb!.position - ballPos).length < 20) {
           activeOrangeOrb!.removeFromParent();
           activeOrangeOrb = null;
+          remove(ball);
+          balls.removeAt(i);
           break;
         }
       }
@@ -564,16 +690,21 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
   @override
   void onTap() {
+    if (!allowShooting) return;
+
     final center = size / 2;
     final ball = Ball(
       angle: arrow.angle,
       radius: 0,
       center: center,
-      speedRadius: 100 + currentLevel * 10,
+      speedRadius: currentLevel >= 25 ? 250 : 100 + currentLevel * 10,
       speedAngle: arrow.speed,
       color: Colors.white,
     );
     balls.add(ball);
     add(ball);
   }
+
+  @override
+  Color backgroundColor() => const Color.fromARGB(255, 146, 146, 190);
 }

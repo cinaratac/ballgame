@@ -5,10 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
+import 'package:flame/input.dart';
 import 'dart:ui';
 
 import 'package:oyun1/oyun1.dart';
-import 'package:oyun1/parts/levels.dart';
+import 'parts/levels.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -125,6 +126,9 @@ class Portal extends PositionComponent with HasGameRef<RotatingArrowGame> {
 
   double rotationSpeed = 0;
 
+  // --- PATCH: Add isMasked field ---
+  bool isMasked = false;
+
   Portal(this.angle, this.radius, {this.isDangerous = false}) {
     size = Vector2.all(20);
     anchor = Anchor.center;
@@ -133,10 +137,15 @@ class Portal extends PositionComponent with HasGameRef<RotatingArrowGame> {
 
   @override
   void render(Canvas canvas) {
+    // --- PATCH: Use isMasked for coloring ---
     final Paint paint = Paint()
-      ..color = isGreen
+      ..color = isMasked
+          ? Colors.white
+          : isGreen
           ? Colors.greenAccent
-          : (isDangerous ? Colors.redAccent : Colors.blueAccent);
+          : (isDangerous
+                ? const Color.fromARGB(255, 159, 44, 44)
+                : const Color.fromARGB(255, 20, 72, 162));
     final center = Offset(size.x / 2, size.y / 2);
     canvas.drawCircle(center, 10, paint);
 
@@ -200,7 +209,7 @@ class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
       angle += speedAngle * dt;
       position = center + Vector2(cos(angle), sin(angle)) * radius;
       trailTimer += dt;
-      if (trailTimer >= 0.05 &&
+      if (trailTimer >= 0.010 &&
           gameRef.children.whereType<CometTrail>().length < 100) {
         gameRef.add(CometTrail(position.clone(), color));
         trailTimer = 0.0;
@@ -208,7 +217,7 @@ class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
     } else {
       hitTimer += dt;
     }
-    // --- PATCH: DeathRing collision for levels 13-17 (center-based calculation) ---
+    // --- PATCH: DeathRing collision for levels 13-17 (center-based calculation, with extra life handling) ---
     if (!hit && gameRef.currentLevel >= 13 && gameRef.currentLevel <= 17) {
       final ballCenter = position;
       final centerToBall = (ballCenter - gameRef.size / 2).length;
@@ -216,15 +225,32 @@ class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
       if (deathRing != null) {
         final deathRingVisualRadius = deathRing.size.x / 2;
         if ((centerToBall - deathRingVisualRadius).abs() <= size.x / 2) {
-          gameRef.playWrongSound();
-          gameRef.add(
-            GrowingCircleEffect(
-              center: gameRef.size / 2,
-              color: Colors.redAccent,
-              maxRadius: gameRef.portalRadius + 10,
-            ),
-          );
-          Future.microtask(() => gameRef.loadLevel(gameRef.currentLevel));
+          // Guard: Only hasExtraLife grants immunity
+          if (gameRef.hasExtraLife) {
+            gameRef.hasExtraLife = false;
+            gameRef.orangeOrbImmune = false;
+            gameRef.hitMessageText.text = 'Extra life used!';
+            gameRef.hitMessageText.textRenderer = TextPaint(
+              style: TextStyle(
+                color: Colors.greenAccent,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            );
+            gameRef.hitMessageTimer = 0;
+            hit = true;
+            return; // Do nothing else, ball keeps moving
+          } else {
+            gameRef.playWrongSound();
+            gameRef.add(
+              GrowingCircleEffect(
+                center: gameRef.size / 2,
+                color: const Color.fromARGB(255, 159, 44, 44),
+                maxRadius: gameRef.portalRadius + 10,
+              ),
+            );
+            Future.microtask(() => gameRef.loadLevel(gameRef.currentLevel));
+          }
         }
       }
     }
@@ -298,6 +324,8 @@ class CometTrail extends PositionComponent {
     }
   }
 }
+
+
 
 // --- GROWING CIRCLE EFFECT ---
 class GrowingCircleEffect extends PositionComponent {

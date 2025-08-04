@@ -59,7 +59,8 @@ dev_dependencies:
 flutter:
 
   assets:
-    - assets/
+    - assets/wrong.mp3
+    - assets/correct.mp3
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
@@ -99,3 +100,14 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icon.png"
+flutter_native_splash:
+  color: "#000000" # Arka plan rengi (isteğe göre değiştir)
+  image: assets/splash.png
+  android: true
+  ios: true
+  fullscreen: true
+  android_12:
+    color: "#000000"            # zorunlu
+    image: assets/splash.png    # ikon yerine bunu göster
+    # (İstersen)
+    # branding: assets/branding.png

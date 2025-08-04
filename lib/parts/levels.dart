@@ -2,6 +2,7 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:oyun1/main.dart';
 import 'package:oyun1/oyun1.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LevelSelectScreen extends StatelessWidget {
   @override
@@ -68,6 +69,9 @@ class LevelSelectScreen extends StatelessWidget {
                         onPressed: () {
                           final game = RotatingArrowGame();
                           game.currentLevel = level;
+                          SharedPreferences.getInstance().then((prefs) {
+                            prefs.setInt('currentLevel', level);
+                          });
 
                           Navigator.push(
                             context,
