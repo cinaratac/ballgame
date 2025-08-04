@@ -79,6 +79,8 @@ Future<void> main() async {
 
 class RotatingArrowGame extends FlameGame with TapDetector {
   bool isLoaded = false;
+  // --- PATCH: Shooting allowed flag ---
+  bool allowShooting = true;
   Future<void> init() async {
     await loadCoinScore();
     scoreText.text = 'Coins: $totalScore';
@@ -284,6 +286,32 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         newPortalCount = 6;
         numDangerous = 4;
         break;
+      case 25:
+        newPortalCount = portalCount + level - 4;
+        numDangerous = (newPortalCount / 3).round();
+        break;
+      case 26:
+        newPortalCount = 4; // 2 blue, 2 red
+        numDangerous = 2;
+        break;
+      case 27:
+      case 28:
+      case 29:
+      case 30:
+      case 31:
+      case 32:
+      case 33:
+      case 34:
+      case 35:
+      case 36:
+      case 37:
+      case 38:
+      case 39:
+      case 40:
+        newPortalCount =
+            4 + (level - 26) ~/ 2; // gradually increase number of balls
+        numDangerous = newPortalCount ~/ 2;
+        break;
       default:
         newPortalCount = portalCount + level - 4;
         numDangerous = (newPortalCount / 3)
@@ -317,7 +345,9 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       attempts++;
     }
 
-    double baseSpeed = rotationSpeed + level * 0.2;
+    double baseSpeed = level <= 23
+        ? rotationSpeed + level * 0.2
+        : rotationSpeed + 23 * 0.2;
 
     for (int i = 0; i < newPortalCount; i++) {
       double angle = (2 * pi / newPortalCount) * i;
@@ -341,11 +371,18 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         portal.score = Random().nextInt(5) + 1;
       }
 
-      // --- PATCH: Level 5+ spin speed logic, exclude levels 13 and 14 ---
-      if (level >= 5 && level != 13 && level != 14) {
-        double spinSpeed = level <= 25
-            ? 0.4 + level * 0.035
-            : 0.4 + 25 * 0.035; // Level 25 sonrası sabit hız
+      // --- PATCH: Level 5+ spin speed logic, custom for 27-40 ---
+      if (level >= 5 && level != 13 && level != 14 && level != 26) {
+        double spinSpeed;
+        if (level <= 25) {
+          spinSpeed = 0.4 + level * 0.035;
+        } else if (level >= 27 && level <= 40) {
+          spinSpeed =
+              0.1 +
+              (level - 27) * 0.1; // starts very slow at level 27 and grows
+        } else {
+          spinSpeed = 0.4 + (level - 25) * 0.02 + 0.4 + 25 * 0.035;
+        }
         if (level == 8) {
           portal.rotationSpeed = -spinSpeed; // Sadece level 8 ters döner
         } else {
@@ -401,6 +438,70 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     } else if (level == 24 || level == 25) {
       directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 5), (_) {
         startSmoothDirectionSwap(portals);
+      });
+    } else if (level == 26) {
+      // No rotation and no direction swap
+      // --- PATCH: Level 26 countdown and masking logic ---
+      // PATCH: Disallow shooting during countdown
+      allowShooting = false;
+      final countdownText = TextComponent(
+        text: '5',
+        position: Vector2(size.x / 2, size.y / 2 - 100),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 60,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+      add(countdownText);
+
+      int counter = 5;
+      dart_async.Timer.periodic(Duration(seconds: 1), (timer) {
+        counter--;
+        if (counter > 0) {
+          countdownText.text = '$counter';
+        } else {
+          countdownText.removeFromParent();
+          timer.cancel();
+          // PATCH: Allow shooting after countdown
+          allowShooting = true;
+          for (final p in portals) {
+            p.isMasked = true;
+          }
+        }
+      });
+    } else if (level >= 27 && level <= 40) {
+      allowShooting = false;
+      final countdownText = TextComponent(
+        text: '5',
+        position: Vector2(size.x / 2, size.y / 2 - 100),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 60,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+      add(countdownText);
+
+      int counter = 5;
+      dart_async.Timer.periodic(Duration(seconds: 1), (timer) {
+        counter--;
+        if (counter > 0) {
+          countdownText.text = '$counter';
+        } else {
+          countdownText.removeFromParent();
+          timer.cancel();
+          allowShooting = true;
+          for (final p in portals) {
+            p.isMasked = true;
+          }
+        }
       });
     }
 
@@ -655,12 +756,14 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
   @override
   void onTap() {
+    if (!allowShooting) return;
+
     final center = size / 2;
     final ball = Ball(
       angle: arrow.angle,
       radius: 0,
       center: center,
-      speedRadius: 100 + currentLevel * 10,
+      speedRadius: currentLevel >= 25 ? 250 : 100 + currentLevel * 10,
       speedAngle: arrow.speed,
       color: Colors.white,
     );
@@ -722,6 +825,9 @@ class Portal extends PositionComponent with HasGameRef<RotatingArrowGame> {
 
   double rotationSpeed = 0;
 
+  // --- PATCH: Add isMasked field ---
+  bool isMasked = false;
+
   Portal(this.angle, this.radius, {this.isDangerous = false}) {
     size = Vector2.all(20);
     anchor = Anchor.center;
@@ -730,8 +836,11 @@ class Portal extends PositionComponent with HasGameRef<RotatingArrowGame> {
 
   @override
   void render(Canvas canvas) {
+    // --- PATCH: Use isMasked for coloring ---
     final Paint paint = Paint()
-      ..color = isGreen
+      ..color = isMasked
+          ? Colors.white
+          : isGreen
           ? Colors.greenAccent
           : (isDangerous
                 ? const Color.fromARGB(255, 159, 44, 44)
