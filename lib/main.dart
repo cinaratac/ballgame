@@ -5,11 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import 'package:flame/input.dart';
 import 'dart:ui';
 
 import 'package:oyun1/oyun1.dart';
 import 'parts/levels.dart';
+import 'parts/portal.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -76,107 +76,6 @@ Future<void> main() async {
   );
 }
 
-class Arrow extends PositionComponent with HasGameRef<RotatingArrowGame> {
-  double angle;
-  double speed;
-  final Vector2 center;
-
-  Arrow({required this.angle, required this.speed, required this.center}) {
-    size = Vector2.all(60);
-    anchor = Anchor.center;
-  }
-
-  void updateAngle(double dt) {
-    angle += speed * dt;
-    angle %= 2 * pi;
-  }
-
-  @override
-  void render(Canvas canvas) {
-    final Paint paint = Paint()
-      ..color = gameRef.currentArrowSkin == 0
-          ? Colors.white
-          : gameRef.currentArrowSkin == 1
-          ? Colors.amber
-          : Colors.grey[800]!
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-
-    final centerOffset = Offset(size.x / 2, size.y / 2);
-    final arrowLength = size.x / 2;
-
-    final start = centerOffset;
-    final end = Offset(
-      centerOffset.dx + arrowLength * cos(angle),
-      centerOffset.dy + arrowLength * sin(angle),
-    );
-
-    canvas.drawLine(start, end, paint);
-  }
-}
-
-class Portal extends PositionComponent with HasGameRef<RotatingArrowGame> {
-  double angle;
-  final double radius;
-  late int score; // burayı late yaptım
-  bool isDangerous;
-
-  // --- Green portal property ---
-  bool isGreen = false;
-
-  double rotationSpeed = 0;
-
-  // --- PATCH: Add isMasked field ---
-  bool isMasked = false;
-
-  Portal(this.angle, this.radius, {this.isDangerous = false}) {
-    size = Vector2.all(20);
-    anchor = Anchor.center;
-    // score burada atanmayacak, loadLevel'de atanacak
-  }
-
-  @override
-  void render(Canvas canvas) {
-    // --- PATCH: Use isMasked for coloring ---
-    final Paint paint = Paint()
-      ..color = isMasked
-          ? Colors.white
-          : isGreen
-          ? Colors.greenAccent
-          : (isDangerous
-                ? const Color.fromARGB(255, 159, 44, 44)
-                : const Color.fromARGB(255, 20, 72, 162));
-    final center = Offset(size.x / 2, size.y / 2);
-    canvas.drawCircle(center, 10, paint);
-
-    // Puanı küçük yaz
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: score.toString(),
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    final offset =
-        center - Offset(textPainter.width / 2, textPainter.height / 2);
-    textPainter.paint(canvas, offset);
-  }
-
-  @override
-  void update(double dt) {
-    if (rotationSpeed != 0) {
-      angle += rotationSpeed * dt;
-    }
-    final center = gameRef.size / 2;
-    angle %= 2 * pi;
-    position = center + Vector2(cos(angle), sin(angle)) * radius;
-  }
-}
 
 class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
   double angle; // açısal pozisyon (radyan)
@@ -324,8 +223,6 @@ class CometTrail extends PositionComponent {
     }
   }
 }
-
-
 
 // --- GROWING CIRCLE EFFECT ---
 class GrowingCircleEffect extends PositionComponent {
@@ -487,36 +384,6 @@ class _ShopScreenState extends State<ShopScreen>
         ],
       ),
     );
-  }
-}
-
-// --- ORANGE ORB CLASS ---
-class OrangeOrb extends PositionComponent {
-  final double angle;
-  final Vector2 center;
-  double speed = 40;
-
-  OrangeOrb({required this.angle, required this.center}) {
-    size = Vector2.all(25);
-    anchor = Anchor.center;
-    position = center + Vector2(cos(angle), sin(angle)) * 600;
-  }
-
-  @override
-  void update(double dt) {
-    final dir = (center - position).normalized();
-    position += dir * speed * dt;
-  }
-
-  @override
-  void render(Canvas canvas) {
-    final paint = Paint()..color = Colors.orange;
-    canvas.drawCircle(Offset(size.x / 2, size.y / 2), size.x / 2, paint);
-  }
-
-  bool collidesWithArrow(Arrow arrow) {
-    final arrowPos = center + Vector2(cos(arrow.angle), sin(arrow.angle)) * 30;
-    return (position - arrowPos).length < 25;
   }
 }
 
