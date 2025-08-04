@@ -22,13 +22,6 @@ Bu oyun, reflekslerinizi ve hafızanızı test eden eğlenceli bir nişan oyunud
   - Portal sayısı yavaşça artar.
   - Renk maskesi ve hafıza oyunu devrede.
 
-## ⚙️ Kurulum
-
-### 1. Gerekli Paketleri Yükleyin
-
-```bash
-flutter pub get
-
 🛍️ Mağaza
 
 Oyunda toplanan puanlar ile farklı ok görünümleri satın alınabilir. Ok envanteri, mağaza arayüzü üzerinden yönetilebilir.
@@ -48,3 +41,6 @@ Oyunda toplanan puanlar ile farklı ok görünümleri satın alınabilir. Ok env
 	•	Level 18–25 arası yön değiştiren portallar bulunur.
 	•	Level 26’da top fırlatma 5 saniye engellenir, sonra renkler maskelenir.
 	•	Level 27’den sonra portal dönüş hızı her seviyede biraz daha artar.
+
+
+Geliştiriciler: Çınar Atakul, Mehmet adil, Rıza Dinçer, İris Uysal
