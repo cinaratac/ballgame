@@ -8,8 +8,11 @@ import 'package:flame/effects.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:oyun1/main.dart';
+import 'parts/effect/DeathrRing.dart';
+import 'parts/arrow.dart';
+import 'parts/portal.dart';
 import 'parts/ui/level_coin_display.dart';
+import 'parts/effect/growingCircle.dart';
 
 class RotatingArrowGame extends FlameGame with TapDetector {
   bool isLoaded = false;
