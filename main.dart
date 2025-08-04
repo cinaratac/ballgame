@@ -10,6 +10,7 @@ import 'package:flame/effects.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'dart:ui';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'ui/level_coin_display.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -122,13 +123,12 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   }
 
   late TextComponent scoreText;
+  late TextComponent levelText;
 
   late TextComponent hitMessageText;
   double hitMessageTimer = 0;
 
   int currentLevel = 1;
-
-  late TextComponent levelText;
 
   int comboCount = 0;
 
@@ -156,40 +156,22 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     arrow.position = center;
     add(arrow);
 
-    // Coins yazısı - ekran üst ortada
-    scoreText = TextComponent(
-      text: 'Coins: 0',
-      position: Vector2(center.x, 20),
-      anchor: Anchor.topCenter,
-      textRenderer: TextPaint(
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-    add(scoreText);
-    await loadCoinScore();
-    scoreText.text = 'Coins: $totalScore';
-
     // Arrow inventory yükle
     await loadOwnedArrows();
 
-    // Level göstergesi
-    levelText = TextComponent(
-      text: 'Level: $currentLevel',
-      position: Vector2(center.x, 60), // Puan yazısının biraz altında
-      anchor: Anchor.topCenter,
-      textRenderer: TextPaint(
-        style: TextStyle(
-          color: Colors.yellowAccent,
-          fontSize: 22,
-          fontWeight: FontWeight.bold,
-        ),
+    // Add score and level text for internal tracking (do not add to scene)
+    scoreText = TextComponent();
+    levelText = TextComponent();
+    await loadCoinScore();
+
+    // Add LevelCoinDisplay (handles level and coins display)
+    add(
+      LevelCoinDisplay(
+        level: currentLevel,
+        coins: totalScore,
+        position: Vector2(size.x / 2, 0),
       ),
     );
-    add(levelText);
 
     // Restore currentLevel from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
@@ -308,8 +290,32 @@ class RotatingArrowGame extends FlameGame with TapDetector {
             .round(); // kırmızı sayısını maviye göre dengeli ayarla
     }
 
-    final dangerousIndices = List.generate(newPortalCount, (i) => i)..shuffle();
-    final dangerSet = dangerousIndices.take(numDangerous).toSet();
+    bool hasThreeAdjacent(Set<int> set, int total) {
+      for (int i = 0; i < total; i++) {
+        if (set.contains(i) &&
+            set.contains((i + 1) % total) &&
+            set.contains((i + 2) % total)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    final dangerSet = <int>{};
+    int attempts = 0;
+    while (attempts < 1000) {
+      final candidate = <int>{};
+      final indices = List.generate(newPortalCount, (i) => i)..shuffle();
+      for (final idx in indices) {
+        candidate.add(idx);
+        if (candidate.length == numDangerous) break;
+      }
+      if (!hasThreeAdjacent(candidate, newPortalCount)) {
+        dangerSet.addAll(candidate);
+        break;
+      }
+      attempts++;
+    }
 
     double baseSpeed = rotationSpeed + level * 0.2;
 
@@ -379,7 +385,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     if (level >= 13 && level <= 20) {
       final deathRing = DeathRing(
         radius: min(size.x, size.y) / 2,
-        color: Colors.redAccent.withOpacity(0.5),
+        color: const Color.fromARGB(255, 159, 44, 44),
       );
       add(deathRing);
     }
@@ -398,6 +404,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       });
     }
 
+    scoreText.text = 'Coins: $totalScore';
     levelText.text = 'Level: $currentLevel';
     // Save currentLevel to SharedPreferences
     final prefs = await SharedPreferences.getInstance();
@@ -489,7 +496,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 hitMessageText.text = '-${p.score.abs()}';
                 hitMessageText.textRenderer = TextPaint(
                   style: TextStyle(
-                    color: Colors.redAccent,
+                    color: const Color.fromARGB(255, 159, 44, 44),
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -499,7 +506,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 add(
                   GrowingCircleEffect(
                     center: size / 2,
-                    color: Colors.redAccent,
+                    color: const Color.fromARGB(255, 159, 44, 44),
                     maxRadius: portalRadius + 10,
                   ),
                 );
@@ -524,7 +531,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 hitMessageText.text = '+${p.score * comboCount} (x$comboCount)';
                 hitMessageText.textRenderer = TextPaint(
                   style: TextStyle(
-                    color: Colors.blueAccent,
+                    color: const Color.fromARGB(255, 20, 72, 162),
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -555,7 +562,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                         add(
                           GrowingCircleEffect(
                             center: size / 2,
-                            color: Colors.blueAccent,
+                            color: const Color.fromARGB(255, 20, 72, 162),
                             maxRadius: portalRadius + 10,
                           ),
                         );
@@ -660,6 +667,9 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     balls.add(ball);
     add(ball);
   }
+
+  @override
+  Color backgroundColor() => const Color.fromARGB(255, 146, 146, 190);
 }
 
 class Arrow extends PositionComponent with HasGameRef<RotatingArrowGame> {
@@ -723,7 +733,9 @@ class Portal extends PositionComponent with HasGameRef<RotatingArrowGame> {
     final Paint paint = Paint()
       ..color = isGreen
           ? Colors.greenAccent
-          : (isDangerous ? Colors.redAccent : Colors.blueAccent);
+          : (isDangerous
+                ? const Color.fromARGB(255, 159, 44, 44)
+                : const Color.fromARGB(255, 20, 72, 162));
     final center = Offset(size.x / 2, size.y / 2);
     canvas.drawCircle(center, 10, paint);
 
@@ -787,7 +799,7 @@ class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
       angle += speedAngle * dt;
       position = center + Vector2(cos(angle), sin(angle)) * radius;
       trailTimer += dt;
-      if (trailTimer >= 0.05 &&
+      if (trailTimer >= 0.010 &&
           gameRef.children.whereType<CometTrail>().length < 100) {
         gameRef.add(CometTrail(position.clone(), color));
         trailTimer = 0.0;
@@ -823,7 +835,7 @@ class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
             gameRef.add(
               GrowingCircleEffect(
                 center: gameRef.size / 2,
-                color: Colors.redAccent,
+                color: const Color.fromARGB(255, 159, 44, 44),
                 maxRadius: gameRef.portalRadius + 10,
               ),
             );
