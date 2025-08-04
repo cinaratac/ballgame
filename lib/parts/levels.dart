@@ -1,8 +1,8 @@
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
-import 'package:oyun1/main.dart';
 import 'package:oyun1/oyun1.dart';
+import 'ui/shopScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LevelSelectScreen extends StatelessWidget {
