@@ -191,6 +191,10 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     );
     add(levelText);
 
+    // Restore currentLevel from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    currentLevel = prefs.getInt('currentLevel') ?? currentLevel;
+
     // Level yükle
     loadLevel(currentLevel);
 
@@ -236,7 +240,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     _setupLevel(level);
   }
 
-  void _setupLevel(int level) {
+  void _setupLevel(int level) async {
     isLoaded = false;
     portals.clear();
     hasExtraLife = false;
@@ -331,8 +335,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         portal.score = Random().nextInt(5) + 1;
       }
 
-      // --- PATCH: Level 5+ spin speed logic ---
-      if (level >= 5) {
+      // --- PATCH: Level 5+ spin speed logic, exclude levels 13 and 14 ---
+      if (level >= 5 && level != 13 && level != 14) {
         double spinSpeed = level <= 25
             ? 0.4 + level * 0.035
             : 0.4 + 25 * 0.035; // Level 25 sonrası sabit hız
@@ -395,6 +399,9 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     }
 
     levelText.text = 'Level: $currentLevel';
+    // Save currentLevel to SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('currentLevel', currentLevel);
     isLoaded = true;
   }
 
@@ -447,6 +454,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 hitMessageTimer = 0;
 
                 portals.remove(p);
+
                 p.removeFromParent();
 
                 balls[i].removeFromParent();
@@ -502,7 +510,11 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 remove(balls[i]);
                 balls.removeAt(i);
                 break;
-              } else {
+              } else if (!p.isDangerous && !p.isGreen) {
+                // --- Patch: Add guard to prevent double-hitting blue portals ---
+                if (p.children.isNotEmpty || !children.contains(p)) {
+                  break;
+                }
                 playCorrectSound();
                 // Mavi topa çarpıldığında puan ekle
                 comboCount++;
@@ -524,8 +536,9 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                     Vector2.zero(),
                     EffectController(duration: 0.5, curve: Curves.easeOut),
                     onComplete: () async {
-                      remove(p);
-                      portals.remove(p);
+                      if (children.contains(p)) {
+                        p.removeFromParent();
+                      }
                       // --- LEVEL ADVANCEMENT HANDLING WITH LEVEL 10 SKIP ---
                       if (portals
                           .where(
@@ -561,6 +574,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                     },
                   ),
                 );
+                // Remove portal from list immediately after effect is added
+                portals.remove(p);
 
                 remove(balls[i]);
                 balls.removeAt(i);
@@ -593,12 +608,15 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
     // --- Orange Orb collision with Ball ---
     if (activeOrangeOrb != null) {
-      for (final ball in balls) {
+      for (int i = balls.length - 1; i >= 0; i--) {
+        final ball = balls[i];
         final ballPos =
             size / 2 + Vector2(cos(ball.angle), sin(ball.angle)) * ball.radius;
         if ((activeOrangeOrb!.position - ballPos).length < 20) {
           activeOrangeOrb!.removeFromParent();
           activeOrangeOrb = null;
+          remove(ball);
+          balls.removeAt(i);
           break;
         }
       }
@@ -777,7 +795,7 @@ class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
     } else {
       hitTimer += dt;
     }
-    // --- PATCH: DeathRing collision for levels 13-17 (center-based calculation) ---
+    // --- PATCH: DeathRing collision for levels 13-17 (center-based calculation, with extra life handling) ---
     if (!hit && gameRef.currentLevel >= 13 && gameRef.currentLevel <= 17) {
       final ballCenter = position;
       final centerToBall = (ballCenter - gameRef.size / 2).length;
@@ -785,15 +803,32 @@ class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
       if (deathRing != null) {
         final deathRingVisualRadius = deathRing.size.x / 2;
         if ((centerToBall - deathRingVisualRadius).abs() <= size.x / 2) {
-          gameRef.playWrongSound();
-          gameRef.add(
-            GrowingCircleEffect(
-              center: gameRef.size / 2,
-              color: Colors.redAccent,
-              maxRadius: gameRef.portalRadius + 10,
-            ),
-          );
-          Future.microtask(() => gameRef.loadLevel(gameRef.currentLevel));
+          // Guard: Only hasExtraLife grants immunity
+          if (gameRef.hasExtraLife) {
+            gameRef.hasExtraLife = false;
+            gameRef.orangeOrbImmune = false;
+            gameRef.hitMessageText.text = 'Extra life used!';
+            gameRef.hitMessageText.textRenderer = TextPaint(
+              style: TextStyle(
+                color: Colors.greenAccent,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            );
+            gameRef.hitMessageTimer = 0;
+            hit = true;
+            return; // Do nothing else, ball keeps moving
+          } else {
+            gameRef.playWrongSound();
+            gameRef.add(
+              GrowingCircleEffect(
+                center: gameRef.size / 2,
+                color: Colors.redAccent,
+                maxRadius: gameRef.portalRadius + 10,
+              ),
+            );
+            Future.microtask(() => gameRef.loadLevel(gameRef.currentLevel));
+          }
         }
       }
     }
@@ -933,6 +968,9 @@ class LevelSelectScreen extends StatelessWidget {
                         onPressed: () {
                           final game = RotatingArrowGame();
                           game.currentLevel = level;
+                          SharedPreferences.getInstance().then((prefs) {
+                            prefs.setInt('currentLevel', level);
+                          });
 
                           Navigator.push(
                             context,
