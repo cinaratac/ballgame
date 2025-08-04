@@ -28,3 +28,23 @@ Bu oyun, reflekslerinizi ve hafızanızı test eden eğlenceli bir nişan oyunud
 
 ```bash
 flutter pub get
+
+🛍️ Mağaza
+
+Oyunda toplanan puanlar ile farklı ok görünümleri satın alınabilir. Ok envanteri, mağaza arayüzü üzerinden yönetilebilir.
+
+💾 Kalıcılık
+	•	Oyun seviyesi, toplam puan ve envanter (ok görünümleri), cihazda SharedPreferences ile saklanır.
+	•	Oyunu kapatsanız bile kaldığınız yerden devam edebilirsiniz.
+
+🎨 Kullanılan Teknolojiler
+	•	Flutter + Flame Game Engine
+	•	Shared Preferences (veri saklama)
+	•	Custom canvas rendering
+	•	Audioplayers (ses efektleri)
+
+🧪 Geliştirici Notları
+	•	Level 13–17 arası kırmızı “ölüm çemberi” aktif olur.
+	•	Level 18–25 arası yön değiştiren portallar bulunur.
+	•	Level 26’da top fırlatma 5 saniye engellenir, sonra renkler maskelenir.
+	•	Level 27’den sonra portal dönüş hızı her seviyede biraz daha artar.
