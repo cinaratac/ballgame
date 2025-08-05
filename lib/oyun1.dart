@@ -721,7 +721,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       angle: arrow.angle,
       radius: 0,
       center: center,
-      speedRadius: currentLevel >= 25 ? 250 : 100 + currentLevel * 10,
+      speedRadius: currentLevel >= 26 ? 220 : 100 + currentLevel * 10,
       speedAngle: arrow.speed,
       color: Colors.white,
     );
