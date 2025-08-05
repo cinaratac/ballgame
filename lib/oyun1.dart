@@ -223,13 +223,34 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         newPortalCount = 6;
         numDangerous = 4;
         break;
-      case 25:
-        newPortalCount = portalCount + level - 4;
-        numDangerous = (newPortalCount / 3).round();
-        break;
       case 26:
         newPortalCount = 4; // 2 blue, 2 red
         numDangerous = 2;
+        break;
+      case 13:
+        newPortalCount = 2;
+        numDangerous = 0;
+        break;
+      case 14:
+        newPortalCount = 5;
+        numDangerous = 4;
+        break;
+      case 15:
+      case 16:
+      case 17:
+      case 18:
+      case 19:
+      case 20:
+        newPortalCount = portalCount + level - 15;
+        numDangerous = (newPortalCount / 3).round();
+        break;
+      case 21:
+      case 22:
+      case 23:
+      case 24:
+      case 25:
+        newPortalCount = portalCount + level - 10;
+        numDangerous = (newPortalCount / 3).round();
         break;
       case 27:
       case 28:
