@@ -26,6 +26,8 @@ class Portal extends PositionComponent with HasGameRef<RotatingArrowGame> {
     size = Vector2.all(20);
     anchor = Anchor.center;
     // score burada atanmayacak, loadLevel'de atanacak
+    // Ensure counter-clockwise rotation by default
+    rotationSpeed = -rotationSpeed.abs();
   }
 
   @override
@@ -63,6 +65,7 @@ class Portal extends PositionComponent with HasGameRef<RotatingArrowGame> {
   @override
   void update(double dt) {
     if (rotationSpeed != 0) {
+      rotationSpeed = -rotationSpeed.abs(); // Force counter-clockwise
       angle += rotationSpeed * dt;
     }
     final center = gameRef.size / 2;
@@ -111,7 +114,7 @@ class Ball extends PositionComponent with HasGameRef<RotatingArrowGame> {
       hitTimer += dt;
     }
     // --- PATCH: DeathRing collision for levels 13-17 (center-based calculation, with extra life handling) ---
-    if (!hit && gameRef.currentLevel >= 13 && gameRef.currentLevel <= 17) {
+    if (!hit && gameRef.currentLevel >= 13 && gameRef.currentLevel <= 20) {
       final ballCenter = position;
       final centerToBall = (ballCenter - gameRef.size / 2).length;
       final deathRing = gameRef.children.whereType<DeathRing>().firstOrNull;
