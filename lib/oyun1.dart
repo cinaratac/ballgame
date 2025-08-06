@@ -137,7 +137,6 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     // Overlay menü butonunu göster
     overlays.add('levelMenuButton');
     overlays.add('shopButton');
-    overlays.add('mainMenuButton');
 
     // Ses oynatıcıları başlat
     correctPlayer = AudioPlayer()..setReleaseMode(ReleaseMode.stop);
