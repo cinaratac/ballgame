@@ -403,7 +403,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       // PATCH: Disallow shooting during countdown
       allowShooting = false;
       final countdownText = TextComponent(
-        text: '5',
+        text: '3',
         position: Vector2(size.x / 2, size.y / 2 - 100),
         anchor: Anchor.center,
         textRenderer: TextPaint(
@@ -416,7 +416,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       );
       add(countdownText);
 
-      int counter = 5;
+      int counter = 3;
       dart_async.Timer.periodic(Duration(seconds: 1), (timer) {
         counter--;
         if (counter > 0) {
@@ -434,7 +434,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     } else if (level >= 27 && level <= 40) {
       allowShooting = false;
       final countdownText = TextComponent(
-        text: '5',
+        text: '3',
         position: Vector2(size.x / 2, size.y / 2 - 100),
         anchor: Anchor.center,
         textRenderer: TextPaint(
@@ -447,7 +447,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       );
       add(countdownText);
 
-      int counter = 5;
+      int counter = 3;
       dart_async.Timer.periodic(Duration(seconds: 1), (timer) {
         counter--;
         if (counter > 0) {
