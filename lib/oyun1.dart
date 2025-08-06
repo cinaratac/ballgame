@@ -303,9 +303,18 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       attempts++;
     }
 
-    double baseSpeed = level <= 23
-        ? rotationSpeed + level * 0.2
-        : rotationSpeed + 23 * 0.2;
+    double baseSpeed;
+    if (level <= 23) {
+      baseSpeed = rotationSpeed + level * 0.2;
+    } else if (level > 23 && level <= 25) {
+      baseSpeed = rotationSpeed + 23 * 0.2;
+    } else if (level >= 26 && level <= 29) {
+      baseSpeed = rotationSpeed + 5 * 0.2;
+    } else if (level >= 30 && level <= 40) {
+      baseSpeed = rotationSpeed + (level - 25) * 0.2;
+    } else {
+      baseSpeed = rotationSpeed; // varsayılan değer, örneğin 2.0
+    }
 
     for (int i = 0; i < newPortalCount; i++) {
       double angle = (2 * pi / newPortalCount) * i;
@@ -388,16 +397,14 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     arrow.speed = baseSpeed;
     directionSwapTimer?.cancel();
     if (level >= 18 && level <= 20) {
-      directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 10), (
-        _,
-      ) {
+      directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 6), (_) {
         startSmoothDirectionSwap(portals);
       });
     } else if (level == 24 || level == 25) {
-      directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 5), (_) {
+      directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 4), (_) {
         startSmoothDirectionSwap(portals);
       });
-    } else if (level == 26) {
+    } else if (level >= 26 && level <= 35) {
       // No rotation and no direction swap
       // --- PATCH: Level 26 countdown and masking logic ---
       // PATCH: Disallow shooting during countdown
@@ -431,10 +438,10 @@ class RotatingArrowGame extends FlameGame with TapDetector {
           }
         }
       });
-    } else if (level >= 27 && level <= 40) {
+    } else if (level >= 36 && level <= 40) {
       allowShooting = false;
       final countdownText = TextComponent(
-        text: '3',
+        text: '5',
         position: Vector2(size.x / 2, size.y / 2 - 100),
         anchor: Anchor.center,
         textRenderer: TextPaint(
@@ -447,7 +454,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       );
       add(countdownText);
 
-      int counter = 3;
+      int counter = 5;
       dart_async.Timer.periodic(Duration(seconds: 1), (timer) {
         counter--;
         if (counter > 0) {
@@ -717,14 +724,29 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     if (!allowShooting) return;
 
     final center = size / 2;
+
+    double speedRadius;
+    if (currentLevel <= 23) {
+      speedRadius = 100 + currentLevel * 10;
+    } else if (currentLevel > 23 && currentLevel <= 25) {
+      speedRadius = 100 + 23 * 10;
+    } else if (currentLevel >= 26 && currentLevel <= 29) {
+      speedRadius = 100 + 50;
+    } else if (currentLevel >= 30 && currentLevel <= 40) {
+      speedRadius = 100 + (currentLevel - 25) * 10;
+    } else {
+      speedRadius = 100; // varsayılan değer
+    }
+
     final ball = Ball(
       angle: arrow.angle,
       radius: 0,
       center: center,
-      speedRadius: currentLevel >= 26 ? 220 : 100 + currentLevel * 10,
+      speedRadius: speedRadius,
       speedAngle: arrow.speed,
       color: Colors.white,
     );
+
     balls.add(ball);
     add(ball);
   }
