@@ -65,7 +65,6 @@ class Portal extends PositionComponent with HasGameRef<RotatingArrowGame> {
   @override
   void update(double dt) {
     if (rotationSpeed != 0) {
-      rotationSpeed = -rotationSpeed.abs(); // Force counter-clockwise
       angle += rotationSpeed * dt;
     }
     final center = gameRef.size / 2;
@@ -255,24 +254,30 @@ class CometTrail extends PositionComponent {
 void startSmoothDirectionSwap(List<Portal> portals) {
   for (var portal in portals) {
     final originalSpeed = portal.rotationSpeed;
-    double slowdownStep = originalSpeed / 30;
+    double slowdownStep = originalSpeed / 15;
     int steps = 15;
+
     dart_async.Timer.periodic(Duration(milliseconds: 100), (timer) {
       portal.rotationSpeed -= slowdownStep;
       steps--;
-      if (steps == 0) {
+
+      if (steps <= 0) {
         timer.cancel();
+        portal.rotationSpeed = 0;
+
         dart_async.Timer(Duration(milliseconds: 200), () {
           int stepsBack = 15;
-          double accelerateStep = originalSpeed.abs() / 30;
+          double accelerateStep = originalSpeed.abs() / 15;
+
           dart_async.Timer.periodic(Duration(milliseconds: 100), (revTimer) {
-            portal.rotationSpeed -= portal.rotationSpeed > 0
-                ? accelerateStep
-                : -accelerateStep;
+            portal.rotationSpeed += originalSpeed > 0
+                ? -accelerateStep
+                : accelerateStep;
             stepsBack--;
-            if (stepsBack == 0) {
-              portal.rotationSpeed = -originalSpeed;
+
+            if (stepsBack <= 0) {
               revTimer.cancel();
+              portal.rotationSpeed = -originalSpeed;
             }
           });
         });
