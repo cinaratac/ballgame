@@ -1,11 +1,10 @@
-import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
 import 'package:oyun1/oyun1.dart';
-import 'ui/shopScreen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class LevelSelectScreen extends StatelessWidget {
+  final RotatingArrowGame game;
+  const LevelSelectScreen({super.key, required this.game});
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -67,58 +66,10 @@ class LevelSelectScreen extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        onPressed: () {
-                          final game = RotatingArrowGame();
-                          game.currentLevel = level;
-                          SharedPreferences.getInstance().then((prefs) {
-                            prefs.setInt('currentLevel', level);
-                          });
 
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => GameWidget(
-                                game: game,
-                                overlayBuilderMap: {
-                                  'levelMenuButton': (context, game) {
-                                    return Positioned(
-                                      top: 10,
-                                      right: 10,
-                                      child: TextButton(
-                                        style: TextButton.styleFrom(
-                                          backgroundColor: Colors.grey,
-                                          foregroundColor: Colors.white,
-                                        ),
-                                        onPressed: () => Navigator.pop(context),
-                                        child: Text('Menu'),
-                                      ),
-                                    );
-                                  },
-                                  'shopButton': (context, game) {
-                                    return Positioned(
-                                      top: 10,
-                                      left: 10,
-                                      child: TextButton(
-                                        style: TextButton.styleFrom(
-                                          backgroundColor: Colors.grey,
-                                          foregroundColor: Colors.white,
-                                        ),
-                                        onPressed: () {
-                                          showDialog(
-                                            context: context,
-                                            builder: (context) => ShopScreen(
-                                              game: game as RotatingArrowGame,
-                                            ),
-                                          );
-                                        },
-                                        child: Text('Shop'),
-                                      ),
-                                    );
-                                  },
-                                },
-                              ),
-                            ),
-                          );
+                        onPressed: () {
+                          game.startGame(level: level);
+                          Navigator.of(context).pop();
                         },
                         child: Text('$level'),
                       );
