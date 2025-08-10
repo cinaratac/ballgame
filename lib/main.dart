@@ -2,7 +2,7 @@ import 'package:flame/flame.dart';
 import 'package:flutter/services.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-
+import 'parts/ui/mainMenu.dart';
 import 'oyun1.dart';
 import 'parts/ui/shopScreen.dart';
 import 'parts/levels.dart';
@@ -20,52 +20,25 @@ Future<void> main() async {
       home: GameWidget(
         game: RotatingArrowGame(),
         overlayBuilderMap: {
-          'levelMenuButton': (context, game) {
-            return Positioned(
-              top: 10,
-              right: 10,
-              child: TextButton(
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.grey,
-                  foregroundColor: Colors.white,
+          'MainMenu': (context, game) =>
+              MainMenu(game: game as RotatingArrowGame),
+
+          'BackToMenu': (context, game) => SafeArea(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Material(
+                  color: Colors.transparent,
+                  child: IconButton(
+                    icon: const Icon(Icons.home),
+                    tooltip: 'Ana Menü',
+                    onPressed: () => (game as RotatingArrowGame).goToMenu(),
+                  ),
                 ),
-                onPressed: () {
-                  Navigator.of(context).pushReplacement(
-                    PageRouteBuilder(
-                      transitionDuration: Duration(milliseconds: 400),
-                      pageBuilder: (_, __, ___) => LevelSelectScreen(),
-                      transitionsBuilder: (_, animation, __, child) {
-                        return FadeTransition(opacity: animation, child: child);
-                      },
-                    ),
-                  );
-                },
-                child: Text('Menü'),
               ),
-            );
-          },
-          // Shop button overlay positioned top left
-          'shopButton': (context, game) {
-            return Positioned(
-              top: 10,
-              left: 10,
-              child: TextButton(
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.grey,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          ShopScreen(game: game as RotatingArrowGame),
-                    ),
-                  );
-                },
-                child: Text('Shop'),
-              ),
-            );
-          },
+            ),
+          ),
         },
       ),
     ),
