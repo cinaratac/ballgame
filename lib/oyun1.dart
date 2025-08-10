@@ -361,9 +361,9 @@ class RotatingArrowGame extends FlameGame
           spinSpeed = 0.4 + (level - 25) * 0.02 + 0.4 + 25 * 0.035;
         }
         if (level == 8) {
-          portal.rotationSpeed = -spinSpeed; // Sadece level 8 ters döner
+          portal.rotationSpeed = spinSpeed; // Sadece level 8 ters döner
         } else {
-          portal.rotationSpeed = spinSpeed; // Diğerleri normal döner
+          portal.rotationSpeed = -spinSpeed; // Diğerleri normal döner
         }
       }
 
@@ -408,6 +408,10 @@ class RotatingArrowGame extends FlameGame
     directionSwapTimer?.cancel();
     if (level >= 18 && level <= 20) {
       directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 6), (_) {
+        startSmoothDirectionSwap(portals);
+      });
+    } else if (level >= 21 && level <= 23) {
+      directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 5), (_) {
         startSmoothDirectionSwap(portals);
       });
     } else if (level == 24 || level == 25) {
@@ -508,12 +512,16 @@ class RotatingArrowGame extends FlameGame
   void startGame({int? level}) {
     overlays.remove(MainOverlays.mainMenu);
     overlays.add(MainOverlays.backToMenu);
-    resumeEngine();
+
+    if (level != null && level != currentLevel) {
+      _clearBalls(); // <-- EKLE
+    }
     if (level != null) {
       currentLevel = level;
     }
     loadLevel(currentLevel);
     _hasActiveLevel = true; // <-- BUNU EKLE
+    resumeEngine();
   }
 
   void continueGame() {
@@ -525,6 +533,17 @@ class RotatingArrowGame extends FlameGame
       _hasActiveLevel = true;
     }
     resumeEngine();
+  }
+
+  void _clearBalls() {
+    // Sahnedeki Ball bileşenlerini temizle ve listeyi sıfırla
+    for (final b in List<Ball>.from(balls)) {
+      if (children.contains(b)) {
+        b.removeFromParent();
+      }
+    }
+    balls.clear();
+    comboCount = 0; // kombo sayacını da sıfırla
   }
 
   void goToMenu() {
@@ -635,7 +654,7 @@ class RotatingArrowGame extends FlameGame
                 break;
               } else if (!p.isDangerous && !p.isGreen) {
                 // --- Patch: Add guard to prevent double-hitting blue portals ---
-                if (p.children.isNotEmpty || !children.contains(p)) {
+                if (!children.contains(p)) {
                   break;
                 }
                 playCorrectSound();
