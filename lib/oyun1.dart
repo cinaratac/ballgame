@@ -14,6 +14,11 @@ import 'parts/portal.dart';
 import 'parts/ui/level_coin_display.dart';
 import 'parts/effect/growingCircle.dart';
 
+class MainOverlays {
+  static const String mainMenu = 'MainMenu';
+  static const String backToMenu = 'BackToMenu';
+}
+
 class RotatingArrowGame extends FlameGame with TapDetector {
   bool isLoaded = false;
   // --- PATCH: Shooting allowed flag ---
@@ -68,6 +73,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   double hitMessageTimer = 0;
 
   int currentLevel = 1;
+  bool _hasActiveLevel = false; // yüklü/çalışan level var mı?
 
   int comboCount = 0;
 
@@ -134,9 +140,9 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     );
     add(hitMessageText);
 
-    // Overlay menü butonunu göster
-    overlays.add('levelMenuButton');
-    overlays.add('shopButton');
+    // Açılışta Ana Menü
+    pauseEngine();
+    overlays.add(MainOverlays.mainMenu);
 
     // Ses oynatıcıları başlat
     correctPlayer = AudioPlayer()..setReleaseMode(ReleaseMode.stop);
@@ -249,7 +255,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       case 23:
       case 24:
       case 25:
-        newPortalCount = portalCount + level - 10;
+        newPortalCount = portalCount + level - 14;
         numDangerous = (newPortalCount / 3).round();
         break;
       case 27:
@@ -482,6 +488,36 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   void onRemove() {
     directionSwapTimer?.cancel();
     super.onRemove();
+  }
+
+  void startGame({int? level}) {
+    overlays.remove(MainOverlays.mainMenu);
+    overlays.add(MainOverlays.backToMenu);
+    resumeEngine();
+    if (level != null) {
+      currentLevel = level;
+    }
+    loadLevel(currentLevel);
+    _hasActiveLevel = true; // <-- BUNU EKLE
+  }
+
+  void continueGame() {
+    overlays.remove(MainOverlays.mainMenu);
+    overlays.add(MainOverlays.backToMenu);
+
+    // Eğer daha önce hiç level yüklenmediyse bir defa yükle
+    if (!_hasActiveLevel) {
+      loadLevel(currentLevel);
+      _hasActiveLevel = true;
+    }
+
+    resumeEngine(); // kaldığı yerden devam
+  }
+
+  void goToMenu() {
+    pauseEngine();
+    overlays.remove(MainOverlays.backToMenu);
+    overlays.add(MainOverlays.mainMenu);
   }
 
   @override
