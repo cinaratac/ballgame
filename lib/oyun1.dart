@@ -7,7 +7,8 @@ import 'package:flame/input.dart';
 import 'package:flame/effects.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'parts/effect/DeathrRing.dart';
 import 'parts/arrow.dart';
 import 'parts/portal.dart';
@@ -19,7 +20,8 @@ class MainOverlays {
   static const String backToMenu = 'BackToMenu';
 }
 
-class RotatingArrowGame extends FlameGame with TapDetector {
+class RotatingArrowGame extends FlameGame
+    with TapDetector, WidgetsBindingObserver {
   bool isLoaded = false;
   // --- PATCH: Shooting allowed flag ---
   bool allowShooting = true;
@@ -93,6 +95,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
   @override
   Future<void> onLoad() async {
+    WidgetsBinding.instance.addObserver(this);
+    await loadSavedGameIfAny();
     await super.onLoad();
     final center = size / 2;
 
@@ -485,9 +489,20 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   }
 
   @override
+  @override
   void onRemove() {
-    directionSwapTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.onRemove();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      // uyg. arka plana atıldı/kapatılıyor -> kaydet
+      saveGameState();
+    }
   }
 
   void startGame({int? level}) {
@@ -504,20 +519,19 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   void continueGame() {
     overlays.remove(MainOverlays.mainMenu);
     overlays.add(MainOverlays.backToMenu);
-
-    // Eğer daha önce hiç level yüklenmediyse bir defa yükle
     if (!_hasActiveLevel) {
+      // hiç level yoksa en azından mevcut leveli yükle
       loadLevel(currentLevel);
       _hasActiveLevel = true;
     }
-
-    resumeEngine(); // kaldığı yerden devam
+    resumeEngine();
   }
 
   void goToMenu() {
     pauseEngine();
     overlays.remove(MainOverlays.backToMenu);
     overlays.add(MainOverlays.mainMenu);
+    saveGameState();
   }
 
   @override
@@ -789,4 +803,47 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
   @override
   Color backgroundColor() => const Color.fromARGB(255, 146, 146, 190);
+
+  Future<void> saveGameState() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Minimum: sadece level
+    final data = {
+      'currentLevel': currentLevel,
+      'hasActive': _hasActiveLevel,
+
+      // İstersen BURAYA ek bilgiler koy:
+      // 'arrowAngle': arrow.angle,
+      // 'score': score,
+      // 'randomSeed': randomSeed,
+      // 'balls': balls.map((b) => {'x': b.x, 'y': b.y, 'vx': b.vx, 'vy': b.vy}).toList(),
+    };
+
+    await prefs.setString('savegame', jsonEncode(data));
+  }
+
+  Future<void> loadSavedGameIfAny() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('savegame');
+    if (raw == null) return;
+
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+
+    // Minimum: sadece leveli al
+    currentLevel = (data['currentLevel'] as num?)?.toInt() ?? currentLevel;
+    _hasActiveLevel = (data['hasActive'] as bool?) ?? false;
+
+    // Eğer tam state sakladıysan BURADA geri ata:
+    // arrow.angle = (data['arrowAngle'] as num?)?.toDouble() ?? arrow.angle;
+    // score = (data['score'] as num?)?.toInt() ?? 0;
+    // randomSeed = (data['randomSeed'] as num?)?.toInt() ?? defaultSeed;
+    // balls = (data['balls'] as List).map((m) => Ball.fromJson(m)).toList();
+
+    // Uygulama yeni açıldıysa: aktif level varsa en azından yükle
+    if (_hasActiveLevel) {
+      // Not: Tam konum/velocity’leri saklamıyorsan level baştan yüklenir.
+      // Tam kaldığın anı istiyorsan o alanları da serialize etmen gerekir.
+      loadLevel(currentLevel);
+    }
+  }
 }
