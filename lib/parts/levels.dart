@@ -1,3 +1,5 @@
+import 'dart:async' as dart_async;
+
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +21,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
   static const int _levelCount = RotatingArrowGame.maxLevel;
 
   int _currentLevel = 1;
+  int _highestUnlockedLevel = 1;
 
   @override
   void initState() {
@@ -28,14 +31,22 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
 
   Future<void> _loadCurrentLevel() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedLevel = prefs.getInt('currentLevel') ?? 1;
+    final savedLevel = (prefs.getInt('currentLevel') ?? 1)
+        .clamp(1, _levelCount)
+        .toInt();
+    final savedUnlocked = prefs.getInt('highestUnlockedLevel');
+    final highestUnlocked = (savedUnlocked ?? savedLevel)
+        .clamp(1, _levelCount)
+        .toInt();
     if (!mounted) return;
     setState(() {
-      _currentLevel = savedLevel.clamp(1, _levelCount).toInt();
+      _highestUnlockedLevel = highestUnlocked;
+      _currentLevel = savedLevel.clamp(1, highestUnlocked).toInt();
     });
   }
 
   Future<void> _openLevel(int level) async {
+    if (level > _highestUnlockedLevel) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('currentLevel', level);
 
@@ -58,14 +69,21 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: LevelNavigationButtons(
-                    onPrevious: () {
-                      if (rotatingGame.currentLevel <= 1) return;
-                      rotatingGame.loadLevel(rotatingGame.currentLevel - 1);
-                    },
-                    onNext: () {
-                      if (rotatingGame.currentLevel >= _levelCount) return;
-                      rotatingGame.loadLevel(rotatingGame.currentLevel + 1);
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: rotatingGame.levelProgressRevision,
+                    builder: (context, _, __) {
+                      return LevelNavigationButtons(
+                        canGoPrevious: rotatingGame.canGoToPreviousLevel,
+                        canGoNext: rotatingGame.canGoToNextLevel,
+                        onPrevious: () {
+                          if (!rotatingGame.canGoToPreviousLevel) return;
+                          rotatingGame.loadLevel(rotatingGame.currentLevel - 1);
+                        },
+                        onNext: () {
+                          if (!rotatingGame.canGoToNextLevel) return;
+                          rotatingGame.loadLevel(rotatingGame.currentLevel + 1);
+                        },
+                      );
                     },
                   ),
                 ),
@@ -128,6 +146,15 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
     return _openLevel(_currentLevel);
   }
 
+  Future<void> _unlockAllLevelsForTesting() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('highestUnlockedLevel', _levelCount);
+    if (!mounted) return;
+    setState(() {
+      _highestUnlockedLevel = _levelCount;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
@@ -152,6 +179,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
                     child: _Header(
                       currentLevel: _currentLevel,
                       onResume: _resumeCurrentLevel,
+                      onUnlockAll: _unlockAllLevelsForTesting,
                     ),
                   ),
                 ),
@@ -172,6 +200,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
                           firstLevel: firstLevel,
                           levelCount: _levelCount,
                           currentLevel: _currentLevel,
+                          highestUnlockedLevel: _highestUnlockedLevel,
                           onLevelTap: _openLevel,
                         ),
                       );
@@ -188,10 +217,15 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.currentLevel, required this.onResume});
+  const _Header({
+    required this.currentLevel,
+    required this.onResume,
+    required this.onUnlockAll,
+  });
 
   final int currentLevel;
   final VoidCallback onResume;
+  final VoidCallback onUnlockAll;
 
   @override
   Widget build(BuildContext context) {
@@ -216,17 +250,26 @@ class _Header extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        const Expanded(
-          child: Text(
-            'LEVELS',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 42,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0,
-              height: 0.95,
+        Expanded(
+          child: FittedBox(
+            alignment: Alignment.centerLeft,
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'LEVEL',
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 42,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                    height: 0.95,
+                  ),
+                ),
+                _AdminUnlockLetter(onUnlockAll: onUnlockAll),
+              ],
             ),
           ),
         ),
@@ -258,12 +301,14 @@ class _LevelRow extends StatelessWidget {
     required this.firstLevel,
     required this.levelCount,
     required this.currentLevel,
+    required this.highestUnlockedLevel,
     required this.onLevelTap,
   });
 
   final int firstLevel;
   final int levelCount;
   final int currentLevel;
+  final int highestUnlockedLevel;
   final ValueChanged<int> onLevelTap;
 
   @override
@@ -287,6 +332,7 @@ class _LevelRow extends StatelessWidget {
               return _LevelNode(
                 level: level,
                 selected: level == currentLevel,
+                locked: level > highestUnlockedLevel,
                 onTap: () => onLevelTap(level),
               );
             }).toList(),
@@ -301,11 +347,13 @@ class _LevelNode extends StatelessWidget {
   const _LevelNode({
     required this.level,
     required this.selected,
+    required this.locked,
     required this.onTap,
   });
 
   final int level;
   final bool selected;
+  final bool locked;
   final VoidCallback onTap;
 
   @override
@@ -320,16 +368,22 @@ class _LevelNode extends StatelessWidget {
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: onTap,
+          onTap: locked ? null : onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOut,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: selected ? Colors.white : const Color(0xFF121216),
+              color: selected
+                  ? Colors.white
+                  : locked
+                  ? const Color(0xFF0D0D10)
+                  : const Color(0xFF121216),
               border: Border.all(
                 color: selected
                     ? Colors.white
+                    : locked
+                    ? const Color(0xFF34343B)
                     : markers.isNotEmpty
                     ? const Color(0xFFE3E3E3)
                     : const Color(0xFF8C8C8C),
@@ -351,12 +405,20 @@ class _LevelNode extends StatelessWidget {
                 if (markers.isNotEmpty)
                   Positioned(
                     bottom: 9,
-                    child: _MarkerStrip(markers: markers, selected: selected),
+                    child: _MarkerStrip(
+                      markers: markers,
+                      selected: selected,
+                      locked: locked,
+                    ),
                   ),
                 Text(
                   '$level',
                   style: TextStyle(
-                    color: selected ? Colors.black : Colors.white,
+                    color: selected
+                        ? Colors.black
+                        : locked
+                        ? const Color(0xFF585860)
+                        : Colors.white,
                     fontSize: 23,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0,
@@ -383,13 +445,70 @@ class _LevelNode extends StatelessWidget {
   }
 }
 
+class _AdminUnlockLetter extends StatefulWidget {
+  const _AdminUnlockLetter({required this.onUnlockAll});
+
+  final VoidCallback onUnlockAll;
+
+  @override
+  State<_AdminUnlockLetter> createState() => _AdminUnlockLetterState();
+}
+
+class _AdminUnlockLetterState extends State<_AdminUnlockLetter> {
+  dart_async.Timer? _holdTimer;
+
+  void _startHold() {
+    _holdTimer?.cancel();
+    _holdTimer = dart_async.Timer(const Duration(seconds: 3), () {
+      _holdTimer = null;
+      widget.onUnlockAll();
+    });
+  }
+
+  void _cancelHold() {
+    _holdTimer?.cancel();
+    _holdTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _cancelHold();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) => _startHold(),
+      onPointerUp: (_) => _cancelHold(),
+      onPointerCancel: (_) => _cancelHold(),
+      child: const Text(
+        'S',
+        maxLines: 1,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 42,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+          height: 0.95,
+        ),
+      ),
+    );
+  }
+}
+
 enum _LevelMarker { spin, reverse, ring, swap, memory, vertical, panel }
 
 class _MarkerStrip extends StatelessWidget {
-  const _MarkerStrip({required this.markers, required this.selected});
+  const _MarkerStrip({
+    required this.markers,
+    required this.selected,
+    required this.locked,
+  });
 
   final List<_LevelMarker> markers;
   final bool selected;
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -401,7 +520,11 @@ class _MarkerStrip extends StatelessWidget {
           child: Icon(
             _iconForMarker(marker),
             size: 10,
-            color: selected ? Colors.black : const Color(0xFFE94B5F),
+            color: selected
+                ? Colors.black
+                : locked
+                ? const Color(0xFF585860)
+                : const Color(0xFFE94B5F),
           ),
         );
       }).toList(),

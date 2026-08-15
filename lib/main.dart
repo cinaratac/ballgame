@@ -30,17 +30,21 @@ Future<void> main() async {
               left: 0,
               right: 0,
               child: Center(
-                child: LevelNavigationButtons(
-                  onPrevious: () {
-                    if (rotatingGame.currentLevel <= 1) return;
-                    rotatingGame.loadLevel(rotatingGame.currentLevel - 1);
-                  },
-                  onNext: () {
-                    if (rotatingGame.currentLevel >=
-                        RotatingArrowGame.maxLevel) {
-                      return;
-                    }
-                    rotatingGame.loadLevel(rotatingGame.currentLevel + 1);
+                child: ValueListenableBuilder<int>(
+                  valueListenable: rotatingGame.levelProgressRevision,
+                  builder: (context, _, __) {
+                    return LevelNavigationButtons(
+                      canGoPrevious: rotatingGame.canGoToPreviousLevel,
+                      canGoNext: rotatingGame.canGoToNextLevel,
+                      onPrevious: () {
+                        if (!rotatingGame.canGoToPreviousLevel) return;
+                        rotatingGame.loadLevel(rotatingGame.currentLevel - 1);
+                      },
+                      onNext: () {
+                        if (!rotatingGame.canGoToNextLevel) return;
+                        rotatingGame.loadLevel(rotatingGame.currentLevel + 1);
+                      },
+                    );
                   },
                 ),
               ),

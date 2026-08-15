@@ -74,6 +74,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   double hitMessageTimer = 0;
 
   int currentLevel = 1;
+  int highestUnlockedLevel = 1;
+  final ValueNotifier<int> levelProgressRevision = ValueNotifier<int>(0);
 
   int comboCount = 0;
 
@@ -127,8 +129,15 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
     // Restore currentLevel from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    final savedLevel = prefs.getInt('currentLevel') ?? currentLevel;
-    currentLevel = savedLevel.clamp(1, maxLevel).toInt();
+    final savedLevel = (prefs.getInt('currentLevel') ?? currentLevel)
+        .clamp(1, maxLevel)
+        .toInt();
+    final savedUnlocked = prefs.getInt('highestUnlockedLevel');
+    highestUnlockedLevel = (savedUnlocked ?? savedLevel)
+        .clamp(1, maxLevel)
+        .toInt();
+    currentLevel = savedLevel.clamp(1, highestUnlockedLevel).toInt();
+    _notifyLevelProgress();
 
     // Level yükle
     loadLevel(currentLevel);
@@ -208,8 +217,47 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     );
   }
 
+  bool isLevelUnlocked(int level) {
+    return level >= 1 && level <= highestUnlockedLevel;
+  }
+
+  bool get canGoToPreviousLevel => currentLevel > 1;
+
+  bool get canGoToNextLevel {
+    return currentLevel < maxLevel && currentLevel < highestUnlockedLevel;
+  }
+
+  void _notifyLevelProgress() {
+    levelProgressRevision.value++;
+  }
+
+  Future<void> _saveCurrentLevel() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('currentLevel', currentLevel);
+    await prefs.setInt('highestUnlockedLevel', highestUnlockedLevel);
+    _notifyLevelProgress();
+  }
+
+  Future<void> _unlockThroughLevel(int level) async {
+    final clampedLevel = level.clamp(1, maxLevel).toInt();
+    if (clampedLevel <= highestUnlockedLevel) return;
+    highestUnlockedLevel = clampedLevel;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('highestUnlockedLevel', highestUnlockedLevel);
+    _notifyLevelProgress();
+  }
+
+  Future<void> unlockAllLevels() async {
+    highestUnlockedLevel = maxLevel;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('highestUnlockedLevel', highestUnlockedLevel);
+    _notifyLevelProgress();
+  }
+
   void loadLevel(int level) {
-    _setupLevel(level);
+    final targetLevel = level.clamp(1, maxLevel).toInt();
+    if (!isLevelUnlocked(targetLevel)) return;
+    _setupLevel(targetLevel);
   }
 
   Future<void> _showFeatureTipIfNeeded(int level) async {
@@ -330,8 +378,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     scoreText.text = 'Coins: $totalScore';
     levelText.text = 'Level: $currentLevel';
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('currentLevel', currentLevel);
+    await _saveCurrentLevel();
     isLoaded = true;
     dart_async.unawaited(_showFeatureTipIfNeeded(level));
   }
@@ -341,8 +388,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     scoreText.text = 'Coins: $totalScore';
     levelText.text = 'Level: $currentLevel';
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('currentLevel', currentLevel);
+    await _saveCurrentLevel();
 
     isLoaded = true;
     dart_async.unawaited(_showFeatureTipIfNeeded(currentLevel));
@@ -382,7 +428,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     add(orange);
   }
 
-  void _handleOrangeChallengeHit() {
+  Future<void> _handleOrangeChallengeHit() async {
     _orangeChallengeHits++;
     hitMessageText.text = 'Orange $_orangeChallengeHits/5';
     hitMessageText.textRenderer = TextPaint(
@@ -399,7 +445,9 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     _orangeChallengeTimer?.cancel();
     _orangeChallengeTimer = null;
     _clearOrangeOrbs();
-    currentLevel++;
+    final nextLevel = (currentLevel + 1).clamp(1, maxLevel).toInt();
+    await _unlockThroughLevel(nextLevel);
+    currentLevel = nextLevel;
     add(
       GrowingCircleEffect(
         center: size / 2,
@@ -782,8 +830,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     scoreText.text = 'Coins: $totalScore';
     levelText.text = 'Level: $currentLevel';
     // Save currentLevel to SharedPreferences
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('currentLevel', currentLevel);
+    await _saveCurrentLevel();
     isLoaded = true;
     dart_async.unawaited(_showFeatureTipIfNeeded(level));
   }
@@ -940,11 +987,16 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                           hitMessageTimer = 0;
                           return;
                         }
-                        currentLevel++;
+                        final nextLevel = (currentLevel + 1)
+                            .clamp(1, maxLevel)
+                            .toInt();
+                        await _unlockThroughLevel(nextLevel);
+                        currentLevel = nextLevel;
                         final prefs = await SharedPreferences.getInstance();
                         bool level10Played =
                             prefs.getBool('coinLevel10Played') ?? false;
                         if (currentLevel == 10 && level10Played) {
+                          await _unlockThroughLevel(11);
                           currentLevel = 11;
                         }
                         add(
@@ -1015,7 +1067,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         }
         _removeBallAt(i);
         if (currentLevel == 20) {
-          _handleOrangeChallengeHit();
+          dart_async.unawaited(_handleOrangeChallengeHit());
         }
         break orangeCollision;
       }
