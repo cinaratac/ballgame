@@ -323,6 +323,12 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     balls.clear();
   }
 
+  void _removeBallAt(int index) {
+    final ball = balls[index];
+    remove(ball);
+    balls.removeAt(index);
+  }
+
   void _startShootingCountdown({int seconds = 3}) {
     _clearCountdown();
     allowShooting = false;
@@ -713,8 +719,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
                 p.removeFromParent();
 
-                balls[i].removeFromParent();
-                balls.removeAt(i);
+                _removeBallAt(i);
                 break;
               }
               // Handle dangerous portal (red)
@@ -732,8 +737,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                   );
                   hitMessageTimer = 0;
 
-                  remove(balls[i]);
-                  balls.removeAt(i);
+                  _removeBallAt(i);
                   break;
                 }
                 playWrongSound();
@@ -763,8 +767,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 Future.microtask(() => loadLevel(currentLevel));
                 levelText.text = 'Level: $currentLevel';
 
-                remove(balls[i]);
-                balls.removeAt(i);
+                _removeBallAt(i);
                 break;
               } else if (!p.isDangerous && !p.isGreen) {
                 // --- Patch: Add guard to prevent double-hitting blue portals ---
@@ -833,8 +836,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 // Remove portal from list immediately after effect is added
                 portals.remove(p);
 
-                remove(balls[i]);
-                balls.removeAt(i);
+                _removeBallAt(i);
                 break;
               }
             }
@@ -844,20 +846,17 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       }
       // Vurulduktan sonra 0.5 sn bekle, sonra kaldır
       else if (balls[i].hit && balls[i].hitTimer > 0.5) {
-        remove(balls[i]);
-        balls.removeAt(i);
+        _removeBallAt(i);
       }
       // Vurulmadıysa dışarı çıkma ve ekran dışı kontrolü yap, yoksa bırak dönsün
       else if (!balls[i].hit) {
         if (balls[i].isOutOfRange(portalRadius + 150)) {
           // Dışarı çıkınca kaldır (yarıçapı biraz daha büyüttük)
           comboCount = 0;
-          remove(balls[i]);
-          balls.removeAt(i);
+          _removeBallAt(i);
         } else if (balls[i].isOffScreen(size)) {
           comboCount = 0;
-          remove(balls[i]);
-          balls.removeAt(i);
+          _removeBallAt(i);
         }
       }
     }
@@ -871,8 +870,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         if ((activeOrangeOrb!.position - ballPos).length < 20) {
           activeOrangeOrb!.removeFromParent();
           activeOrangeOrb = null;
-          remove(ball);
-          balls.removeAt(i);
+          _removeBallAt(i);
           break;
         }
       }
