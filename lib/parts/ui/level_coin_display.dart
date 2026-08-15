@@ -1,11 +1,10 @@
-
-import '/oyun1.dart';
-import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 
+import '/oyun1.dart';
+
 class LevelCoinDisplay extends PositionComponent
-    with HasGameRef<RotatingArrowGame> {
+    with HasGameReference<RotatingArrowGame> {
   int level;
   int coins;
 
@@ -39,7 +38,7 @@ class LevelCoinDisplay extends PositionComponent
         style: TextStyle(
           fontSize: 40,
           fontWeight: FontWeight.bold,
-          color:  const Color.fromARGB(255, 77, 133, 255),
+          color: const Color.fromARGB(255, 77, 133, 255),
           shadows: [
             Shadow(color: Colors.black26, offset: Offset(1, 1), blurRadius: 2),
           ],
@@ -93,7 +92,7 @@ class LevelCoinDisplay extends PositionComponent
   @override
   void update(double dt) {
     super.update(dt);
-    level = gameRef.currentLevel;
-    coins = gameRef.totalScore;
+    level = game.currentLevel;
+    coins = game.totalScore;
   }
 }

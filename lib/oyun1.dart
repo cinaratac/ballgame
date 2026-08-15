@@ -8,16 +8,19 @@ import 'package:flame/effects.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'parts/effect/DeathrRing.dart';
+import 'parts/effect/death_ring.dart';
+import 'parts/effect/arena_backdrop.dart';
 import 'parts/arrow.dart';
 import 'parts/portal.dart';
 import 'parts/ui/level_coin_display.dart';
-import 'parts/effect/growingCircle.dart';
+import 'parts/ui/feature_tip_overlay.dart';
+import 'parts/effect/growing_circle.dart';
 
 class RotatingArrowGame extends FlameGame with TapDetector {
+  static const int maxLevel = 45;
+
   @override
   bool isLoaded = false;
-  // --- PATCH: Shooting allowed flag ---
   bool allowShooting = true;
   Future<void> init() async {
     await loadCoinScore();
@@ -27,6 +30,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   final int portalCount = 6;
   final double portalRadius = 150;
   static const double ballRadialSpeedPerArrowSpeed = 50.0;
+  final Random _random = Random();
   final List<Portal> portals = [];
   List<Ball> balls = [];
   late Arrow arrow;
@@ -49,7 +53,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
   Future<void> saveOwnedArrows() async {
     final prefs = await SharedPreferences.getInstance();
-    prefs.setStringList(
+    await prefs.setStringList(
       'ownedArrows',
       ownedArrows.map((e) => e.toString()).toList(),
     );
@@ -59,7 +63,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('ownedArrows');
     if (list != null) {
-      ownedArrows = list.map(int.parse).toSet();
+      ownedArrows = {0, ...list.map(int.tryParse).whereType<int>()};
     }
   }
 
@@ -83,18 +87,21 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   // --- Orange Orb Mechanic ---
   bool orangeOrbImmune = false;
   OrangeOrb? activeOrangeOrb;
+  int _orangeChallengeSpawned = 0;
+  int _orangeChallengeHits = 0;
+  dart_async.Timer? _orangeChallengeTimer;
 
   dart_async.Timer? directionSwapTimer;
   dart_async.Timer? countdownTimer;
   TextComponent? countdownText;
-  _FeatureTipOverlay? _activeFeatureTip;
+  FeatureTipOverlay? _activeFeatureTip;
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
     final center = size / 2;
 
-    add(_ArenaBackdrop());
+    add(ArenaBackdrop());
 
     // Ok oluştur ve ekle
     arrow = Arrow(angle: 0, speed: rotationSpeed, center: center);
@@ -120,7 +127,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
     // Restore currentLevel from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    currentLevel = prefs.getInt('currentLevel') ?? currentLevel;
+    final savedLevel = prefs.getInt('currentLevel') ?? currentLevel;
+    currentLevel = savedLevel.clamp(1, maxLevel).toInt();
 
     // Level yükle
     loadLevel(currentLevel);
@@ -141,6 +149,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     add(hitMessageText);
 
     // Overlay menü butonunu göster
+    overlays.add('levelNavigationButtons');
     overlays.add('levelMenuButton');
     overlays.add('tutorialButton');
     overlays.add('shopButton');
@@ -203,86 +212,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     _setupLevel(level);
   }
 
-  _FeatureTip? _featureTipForLevel(int level) {
-    switch (level) {
-      case 1:
-        return const _FeatureTip(
-          key: 'blue_targets',
-          title: 'Blue targets',
-          message: 'Aim the arrow and hit the blue targets.',
-        );
-      case 2:
-        return const _FeatureTip(
-          key: 'red_targets',
-          title: 'Red targets',
-          message: 'Red targets are dangerous. Do not hit them.',
-        );
-      case 5:
-        return const _FeatureTip(
-          key: 'spinning_targets',
-          title: 'Spinning targets',
-          message: 'Targets now rotate. Catch the rhythm.',
-        );
-      case 6:
-        return const _FeatureTip(
-          key: 'extra_life',
-          title: 'Green target',
-          message: 'Green targets give you an extra life.',
-        );
-      case 8:
-        return const _FeatureTip(
-          key: 'reverse_spin',
-          title: 'Reverse spin',
-          message: 'Targets can rotate in the opposite direction.',
-        );
-      case 13:
-        return const _FeatureTip(
-          key: 'death_ring',
-          title: 'Red ring',
-          message: 'Touching the red ring will restart the level.',
-        );
-      case 18:
-        return const _FeatureTip(
-          key: 'direction_swap',
-          title: 'Direction swap',
-          message: 'Targets can change direction during the level.',
-        );
-      case 20:
-        return const _FeatureTip(
-          key: 'orange_orb',
-          title: 'Orange threat',
-          message: 'Avoid the orange orb when it enters the arena.',
-        );
-      case 24:
-        return const _FeatureTip(
-          key: 'fast_direction_swap',
-          title: 'Fast swaps',
-          message: 'Direction changes now happen more often.',
-        );
-      case 26:
-        return const _FeatureTip(
-          key: 'memory_mask',
-          title: 'Memory',
-          message: 'Memorize the targets before their colors hide.',
-        );
-      case 27:
-        return const _FeatureTip(
-          key: 'moving_memory',
-          title: 'Moving memory',
-          message: 'Remember the colors while the hidden targets rotate.',
-        );
-      case 37:
-        return const _FeatureTip(
-          key: 'late_death_ring',
-          title: 'Ring returns',
-          message: 'Speed stays stable, but the red ring returns.',
-        );
-    }
-    return null;
-  }
-
   Future<void> _showFeatureTipIfNeeded(int level) async {
-    final tip = _featureTipForLevel(level);
+    final tip = featureTipForLevel(level);
     if (tip == null) return;
 
     final prefs = await SharedPreferences.getInstance();
@@ -292,7 +223,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     if (currentLevel != level) return;
 
     _activeFeatureTip?.removeFromParent();
-    _activeFeatureTip = _FeatureTipOverlay(tip: tip);
+    _activeFeatureTip = FeatureTipOverlay(tip: tip);
     add(_activeFeatureTip!);
   }
 
@@ -302,7 +233,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   }
 
   double _arrowSpeedForLevel(int level) {
-    final speedLevel = level <= 6 ? 4 : level;
+    final speedLevel = level <= 6 ? 6 : level;
     final speed = speedLevel <= 23
         ? rotationSpeed + speedLevel * 0.2
         : rotationSpeed + 23 * 0.2;
@@ -323,10 +254,213 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     balls.clear();
   }
 
+  void _clearOrangeOrbs() {
+    _orangeChallengeTimer?.cancel();
+    _orangeChallengeTimer = null;
+    _orangeChallengeSpawned = 0;
+    _orangeChallengeHits = 0;
+    activeOrangeOrb = null;
+    for (final orb in children.whereType<OrangeOrb>().toList()) {
+      orb.removeFromParent();
+    }
+  }
+
+  void _clearRedPanels() {
+    for (final panel in children.whereType<RedPanel>().toList()) {
+      panel.removeFromParent();
+    }
+  }
+
   void _removeBallAt(int index) {
     final ball = balls[index];
     remove(ball);
     balls.removeAt(index);
+  }
+
+  bool _isSideMovementLevel(int level) => level >= 40 && level <= maxLevel;
+
+  int _dangerPenaltyForLevel(int level) {
+    final baseMin = -10 - level;
+    final baseMax = -5 - level;
+    final range = baseMax - baseMin + 1;
+    final rawPenalty = range > 0 ? baseMin + _random.nextInt(range) : baseMin;
+    return -max(1, (rawPenalty.abs() * 0.5).round());
+  }
+
+  Future<void> _setupSideMovementLevel(int level, Vector2 center) async {
+    final sideDangerIndex = level == 41 ? 1 : -1;
+    for (int i = 0; i < 4; i++) {
+      final side = i < 2 ? -1 : 1;
+      final portal = VerticalMovingPortal(
+        side: side,
+        radius: portalRadius,
+        phase: i.isEven ? 0 : pi,
+        isDangerous: i == sideDangerIndex,
+      );
+      portal.score = portal.isDangerous
+          ? _dangerPenaltyForLevel(level)
+          : _random.nextInt(5) + 1;
+      portal.position = center;
+      portals.add(portal);
+      add(portal);
+    }
+
+    if (level == 42 || level == 44 || level == 45) {
+      final redOrbit = Portal(-pi / 2, portalRadius, isDangerous: true)
+        ..score = _dangerPenaltyForLevel(level)
+        ..rotationSpeed = 0.72;
+      portals.add(redOrbit);
+      add(redOrbit);
+    }
+
+    if (level == 45) {
+      final blueOrbit = Portal(pi / 2, portalRadius)
+        ..score = _random.nextInt(5) + 1
+        ..rotationSpeed = 0.72;
+      portals.add(blueOrbit);
+      add(blueOrbit);
+    }
+
+    if (level == 43 || level == 44 || level == 45) {
+      add(RedPanel(side: -1, radius: portalRadius));
+      add(RedPanel(side: 1, radius: portalRadius));
+    }
+
+    arrow.speed = _arrowSpeedForLevel(level);
+    scoreText.text = 'Coins: $totalScore';
+    levelText.text = 'Level: $currentLevel';
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('currentLevel', currentLevel);
+    isLoaded = true;
+    dart_async.unawaited(_showFeatureTipIfNeeded(level));
+  }
+
+  Future<void> _setupOrangeChallengeLevel() async {
+    arrow.speed = _arrowSpeedForLevel(currentLevel);
+    scoreText.text = 'Coins: $totalScore';
+    levelText.text = 'Level: $currentLevel';
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('currentLevel', currentLevel);
+
+    isLoaded = true;
+    dart_async.unawaited(_showFeatureTipIfNeeded(currentLevel));
+    _startOrangeChallenge();
+  }
+
+  void _startOrangeChallenge() {
+    _orangeChallengeTimer?.cancel();
+    _orangeChallengeSpawned = 0;
+    _orangeChallengeHits = 0;
+
+    _spawnOrangeChallengeOrb();
+    _orangeChallengeTimer = dart_async.Timer.periodic(
+      const Duration(milliseconds: 1800),
+      (timer) {
+        if (!isLoaded || currentLevel != 20) {
+          timer.cancel();
+          return;
+        }
+        if (_orangeChallengeSpawned >= 5) {
+          timer.cancel();
+          _orangeChallengeTimer = null;
+          return;
+        }
+        _spawnOrangeChallengeOrb();
+      },
+    );
+  }
+
+  void _spawnOrangeChallengeOrb() {
+    if (_orangeChallengeSpawned >= 5) return;
+    final orange = OrangeOrb(
+      angle: _random.nextDouble() * 2 * pi,
+      center: size / 2,
+    );
+    _orangeChallengeSpawned++;
+    add(orange);
+  }
+
+  void _handleOrangeChallengeHit() {
+    _orangeChallengeHits++;
+    hitMessageText.text = 'Orange $_orangeChallengeHits/5';
+    hitMessageText.textRenderer = TextPaint(
+      style: const TextStyle(
+        color: Colors.orangeAccent,
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    hitMessageTimer = 0;
+
+    if (_orangeChallengeHits < 5) return;
+
+    _orangeChallengeTimer?.cancel();
+    _orangeChallengeTimer = null;
+    _clearOrangeOrbs();
+    currentLevel++;
+    add(
+      GrowingCircleEffect(
+        center: size / 2,
+        color: Colors.orangeAccent,
+        maxRadius: portalRadius + 10,
+      ),
+    );
+    Future.microtask(() => loadLevel(currentLevel));
+    hitMessageText.text = 'Level $currentLevel';
+    hitMessageText.textRenderer = TextPaint(
+      style: const TextStyle(
+        color: Colors.yellowAccent,
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    hitMessageTimer = 0;
+    levelText.text = 'Level: $currentLevel';
+  }
+
+  void _restartOrangeChallenge() {
+    playWrongSound();
+    comboCount = 0;
+    hitMessageText.text = 'Orange reached center!';
+    hitMessageText.textRenderer = TextPaint(
+      style: const TextStyle(
+        color: Colors.orangeAccent,
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    hitMessageTimer = 0;
+    Future.microtask(() => loadLevel(currentLevel));
+  }
+
+  void _restartFromPanelHit() {
+    playWrongSound();
+    comboCount = 0;
+    add(
+      GrowingCircleEffect(
+        center: size / 2,
+        color: const Color.fromARGB(255, 159, 44, 44),
+        maxRadius: portalRadius + 10,
+      ),
+    );
+    hitMessageText.text = 'Panel hit!';
+    hitMessageText.textRenderer = TextPaint(
+      style: const TextStyle(
+        color: Color.fromARGB(255, 159, 44, 44),
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    hitMessageTimer = 0;
+    Future.microtask(() => loadLevel(currentLevel));
+  }
+
+  bool _ballHitsRedPanel(Ball ball) {
+    return children.whereType<RedPanel>().any(
+      (panel) => panel.collidesWithBall(ball),
+    );
   }
 
   void _startShootingCountdown({int seconds = 3}) {
@@ -371,29 +505,38 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
   void _setupLevel(int level) async {
     isLoaded = false;
+    currentLevel = level;
     _dismissFeatureTip();
     allowShooting = true;
+    directionSwapTimer?.cancel();
+    directionSwapTimer = null;
     _clearCountdown();
     _clearActiveBalls();
+    _clearOrangeOrbs();
+    _clearRedPanels();
     portals.clear();
     hasExtraLife = false;
     orangeOrbImmune = false;
-    // Remove any existing orange orb before new level setup
-    if (activeOrangeOrb != null) {
-      activeOrangeOrb!.removeFromParent();
-      activeOrangeOrb = null;
-    }
 
     for (final child in children.whereType<Portal>().toList()) {
       remove(child);
     }
 
-    // --- PATCH: Remove DeathRing if present ---
     for (final child in children.whereType<DeathRing>().toList()) {
       remove(child);
     }
 
+    if (level == 20) {
+      await _setupOrangeChallengeLevel();
+      return;
+    }
+
     final center = size / 2;
+
+    if (_isSideMovementLevel(level)) {
+      await _setupSideMovementLevel(level, center);
+      return;
+    }
 
     int newPortalCount;
     int numDangerous = 0;
@@ -493,7 +636,6 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       case 37:
       case 38:
       case 39:
-      case 40:
         newPortalCount =
             4 + (level - 26) ~/ 2; // gradually increase number of balls
         numDangerous = newPortalCount ~/ 2;
@@ -552,32 +694,16 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       final portal = Portal(angle, portalRadius, isDangerous: isDanger);
 
       if (isDanger) {
-        int baseMax = -5 - level;
-        int baseMin = -10 - level;
-
-        if (baseMax < baseMin) {
-          final temp = baseMin;
-          baseMin = baseMax;
-          baseMax = temp;
-        }
-
-        int range = baseMax - baseMin + 1;
-
-        final rawPenalty = range > 0
-            ? baseMin + Random().nextInt(range)
-            : baseMin;
-        final reducedPenalty = max(1, (rawPenalty.abs() * 0.85).round());
-        portal.score = -reducedPenalty;
+        portal.score = _dangerPenaltyForLevel(level);
       } else {
-        portal.score = Random().nextInt(5) + 1;
+        portal.score = _random.nextInt(5) + 1;
       }
 
-      // --- PATCH: Level 5+ spin speed logic, custom for 27-40 ---
       if (level >= 5 && level != 13 && level != 14 && level != 26) {
         double spinSpeed;
         if (level <= 25) {
           spinSpeed = 0.4 + level * 0.035;
-        } else if (level >= 27 && level <= 40) {
+        } else if (level >= 27 && level <= 39) {
           final spinLevel = min(level, 36);
           spinSpeed = 0.1 + (spinLevel - 27) * 0.1;
           if (level >= 36) {
@@ -601,30 +727,31 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       add(portal);
     }
 
-    if (currentLevel >= 6 && Random().nextDouble() < 1 / 3 && level != 10) {
+    if (currentLevel >= 6 && _random.nextDouble() < 1 / 3 && level != 10) {
       final nonDangerous = portals
           .where((p) => !p.isDangerous && !p.isGreen)
           .toList();
       if (nonDangerous.isNotEmpty) {
-        final selected = nonDangerous[Random().nextInt(nonDangerous.length)];
+        final selected = nonDangerous[_random.nextInt(nonDangerous.length)];
         selected.isGreen = true;
         selected.score = 0;
       }
     }
 
-    if (currentLevel >= 20 && Random().nextDouble() < 1 / 5 && level != 10) {
-      Future.delayed(Duration(seconds: Random().nextInt(5) + 2), () {
+    if (currentLevel >= 20 && _random.nextDouble() < 1 / 5 && level != 10) {
+      final scheduledLevel = currentLevel;
+      Future.delayed(Duration(seconds: _random.nextInt(5) + 2), () {
         // Only spawn a new orange orb if none is active
         if (!isLoaded || !children.contains(arrow)) return;
+        if (currentLevel != scheduledLevel) return;
         if (activeOrangeOrb != null) return;
-        final angle = Random().nextDouble() * 2 * pi;
+        final angle = _random.nextDouble() * 2 * pi;
         final orange = OrangeOrb(angle: angle, center: size / 2);
         activeOrangeOrb = orange;
         add(orange);
       });
     }
 
-    // --- PATCH: Add DeathRing for level 13-20 and 37+ ---
     if ((level >= 13 && level <= 20) || level > 36) {
       final deathRing = DeathRing(
         radius: min(size.x, size.y) / 2,
@@ -648,7 +775,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     } else if (level == 26) {
       // No rotation and no direction swap
       _startShootingCountdown();
-    } else if (level >= 27 && level <= 40) {
+    } else if (level >= 27 && level <= 39) {
       _startShootingCountdown();
     }
 
@@ -691,8 +818,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
           // Hangi portala vurduğunu bul ve puan ekle
           for (var p in portals) {
-            final portalPos =
-                size / 2 + Vector2(cos(p.angle), sin(p.angle)) * p.radius;
+            final portalPos = p.position;
             final ballPos =
                 size / 2 +
                 Vector2(cos(balls[i].angle), sin(balls[i].angle)) *
@@ -700,7 +826,6 @@ class RotatingArrowGame extends FlameGame with TapDetector {
             final distance = (portalPos - ballPos).length;
             final collisionDistance = (p.size.x / 2) + (balls[i].size.x / 2);
 
-            // --- YENİ BLOK ---
             if (distance < collisionDistance) {
               // Handle green portal (extra life)
               if (p.isGreen && children.contains(p)) {
@@ -770,7 +895,6 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 _removeBallAt(i);
                 break;
               } else if (!p.isDangerous && !p.isGreen) {
-                // --- Patch: Add guard to prevent double-hitting blue portals ---
                 if (p.children.isNotEmpty || !children.contains(p)) {
                   break;
                 }
@@ -804,6 +928,18 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                             (portal) => !portal.isDangerous && !portal.isGreen,
                           )
                           .isEmpty) {
+                        if (currentLevel >= maxLevel) {
+                          hitMessageText.text = 'Completed!';
+                          hitMessageText.textRenderer = TextPaint(
+                            style: const TextStyle(
+                              color: Colors.yellowAccent,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          );
+                          hitMessageTimer = 0;
+                          return;
+                        }
                         currentLevel++;
                         final prefs = await SharedPreferences.getInstance();
                         bool level10Played =
@@ -840,7 +976,6 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                 break;
               }
             }
-            // --- YENİ BLOK SONU ---
           }
         }
       }
@@ -850,7 +985,10 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       }
       // Vurulmadıysa dışarı çıkma ve ekran dışı kontrolü yap, yoksa bırak dönsün
       else if (!balls[i].hit) {
-        if (balls[i].isOutOfRange(portalRadius + 150)) {
+        if (_ballHitsRedPanel(balls[i])) {
+          _restartFromPanelHit();
+          _removeBallAt(i);
+        } else if (balls[i].isOutOfRange(portalRadius + 150)) {
           // Dışarı çıkınca kaldır (yarıçapı biraz daha büyüttük)
           comboCount = 0;
           _removeBallAt(i);
@@ -862,22 +1000,42 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     }
 
     // --- Orange Orb collision with Ball ---
-    if (activeOrangeOrb != null) {
+    orangeCollision:
+    for (final orangeOrb in children.whereType<OrangeOrb>().toList()) {
+      if (!children.contains(orangeOrb)) continue;
       for (int i = balls.length - 1; i >= 0; i--) {
         final ball = balls[i];
         final ballPos =
             size / 2 + Vector2(cos(ball.angle), sin(ball.angle)) * ball.radius;
-        if ((activeOrangeOrb!.position - ballPos).length < 20) {
-          activeOrangeOrb!.removeFromParent();
+        if ((orangeOrb.position - ballPos).length >= 20) continue;
+
+        orangeOrb.removeFromParent();
+        if (activeOrangeOrb == orangeOrb) {
           activeOrangeOrb = null;
-          _removeBallAt(i);
-          break;
         }
+        _removeBallAt(i);
+        if (currentLevel == 20) {
+          _handleOrangeChallengeHit();
+        }
+        break orangeCollision;
       }
     }
 
-    // --- Orange Orb collision with Arrow ---
-    if (activeOrangeOrb != null && activeOrangeOrb!.collidesWithArrow(arrow)) {
+    // --- Orange Orb collision with center / Arrow ---
+    for (final orangeOrb in children.whereType<OrangeOrb>().toList()) {
+      if (!children.contains(orangeOrb)) continue;
+      if (currentLevel == 20) {
+        if (orangeOrb.hasReachedCenter()) {
+          orangeOrb.removeFromParent();
+          _restartOrangeChallenge();
+          break;
+        }
+        continue;
+      }
+
+      if (activeOrangeOrb != orangeOrb || !orangeOrb.collidesWithArrow(arrow)) {
+        continue;
+      }
       if (orangeOrbImmune) {
         hasExtraLife = false;
         orangeOrbImmune = false;
@@ -886,8 +1044,9 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         Future.microtask(() => loadLevel(currentLevel));
         hitMessageText.text = 'Hit by Orange Orb!';
       }
-      activeOrangeOrb!.removeFromParent();
+      orangeOrb.removeFromParent();
       activeOrangeOrb = null;
+      break;
     }
 
     // Vuruş mesajını 1.5 sn göster sonra temizle
@@ -923,164 +1082,4 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
   @override
   Color backgroundColor() => const Color(0xFF050506);
-}
-
-class _ArenaBackdrop extends Component
-    with HasGameReference<RotatingArrowGame> {
-  _ArenaBackdrop() {
-    priority = -1000;
-  }
-
-  double _time = 0;
-
-  @override
-  void update(double dt) {
-    _time += dt;
-  }
-
-  @override
-  void render(Canvas canvas) {
-    final size = game.size;
-    final rect = Offset.zero & Size(size.x, size.y);
-    final center = Offset(size.x / 2, size.y / 2);
-
-    final basePaint = Paint()
-      ..shader = const RadialGradient(
-        center: Alignment(0, -0.08),
-        radius: 0.85,
-        colors: [Color(0xFF171820), Color(0xFF090A0D), Color(0xFF030304)],
-        stops: [0, 0.55, 1],
-      ).createShader(rect);
-    canvas.drawRect(rect, basePaint);
-
-    final orbitPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.15
-      ..color = Colors.white.withValues(alpha: 0.075);
-
-    for (int i = 0; i < 5; i++) {
-      canvas.drawCircle(center, 54.0 + i * 34, orbitPaint);
-    }
-
-    final mainRingPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = Colors.white.withValues(alpha: 0.12);
-    canvas.drawCircle(center, game.portalRadius, mainRingPaint);
-
-    final tickPaint = Paint()
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = 2
-      ..color = Colors.white.withValues(alpha: 0.10);
-    final tickRotation = _time * 0.18;
-    for (int i = 0; i < 36; i++) {
-      final angle = tickRotation + i * 2 * pi / 36;
-      final outer = game.portalRadius + (i % 3 == 0 ? 18 : 10);
-      final inner = game.portalRadius + 3;
-      final start = center + Offset(cos(angle), sin(angle)) * inner;
-      final end = center + Offset(cos(angle), sin(angle)) * outer;
-      canvas.drawLine(start, end, tickPaint);
-    }
-
-    final axisPaint = Paint()
-      ..strokeWidth = 1
-      ..color = Colors.white.withValues(alpha: 0.045);
-    canvas.drawLine(Offset(center.dx, 0), Offset(center.dx, size.y), axisPaint);
-    canvas.drawLine(Offset(0, center.dy), Offset(size.x, center.dy), axisPaint);
-
-    final dotPaint = Paint()..color = Colors.white.withValues(alpha: 0.11);
-    for (int i = 0; i < 42; i++) {
-      final x = (sin(i * 2.17) * 0.5 + 0.5) * size.x;
-      final y = (cos(i * 1.91) * 0.5 + 0.5) * size.y;
-      final distance = (Offset(x, y) - center).distance;
-      if (distance < game.portalRadius + 48) continue;
-      canvas.drawCircle(Offset(x, y), i % 7 == 0 ? 1.7 : 1.0, dotPaint);
-    }
-  }
-}
-
-class _FeatureTip {
-  const _FeatureTip({
-    required this.key,
-    required this.title,
-    required this.message,
-  });
-
-  final String key;
-  final String title;
-  final String message;
-}
-
-class _FeatureTipOverlay extends Component
-    with HasGameReference<RotatingArrowGame> {
-  _FeatureTipOverlay({required this.tip}) {
-    priority = 2000;
-  }
-
-  final _FeatureTip tip;
-
-  @override
-  void render(Canvas canvas) {
-    final gameSize = game.size;
-    final screen = Size(gameSize.x, gameSize.y);
-    final maxWidth = min(screen.width - 42, 330.0);
-    final titlePainter = TextPainter(
-      text: TextSpan(
-        text: tip.title,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 24,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: maxWidth - 44);
-
-    final messagePainter = TextPainter(
-      text: TextSpan(
-        text: tip.message,
-        style: const TextStyle(
-          color: Color(0xFFD6D6DA),
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-          height: 1.25,
-          letterSpacing: 0,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 4,
-      ellipsis: '...',
-    )..layout(maxWidth: maxWidth - 44);
-
-    final height = 118 + titlePainter.height + messagePainter.height;
-    final rect = Rect.fromCenter(
-      center: Offset(screen.width / 2, screen.height * 0.25),
-      width: maxWidth,
-      height: height,
-    );
-    final box = RRect.fromRectAndRadius(rect, const Radius.circular(8));
-
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.45)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
-    canvas.drawRRect(box.shift(const Offset(0, 8)), shadowPaint);
-
-    final boxPaint = Paint()..color = const Color(0xF20D0D11);
-    canvas.drawRRect(box, boxPaint);
-
-    final borderPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = Colors.white.withValues(alpha: 0.88);
-    canvas.drawRRect(box, borderPaint);
-
-    final accentPaint = Paint()..color = const Color(0xFFE94B5F);
-    canvas.drawCircle(rect.topLeft + const Offset(26, 26), 5, accentPaint);
-
-    var cursor = Offset(rect.left + 22, rect.top + 44);
-    titlePainter.paint(canvas, cursor);
-    cursor = cursor.translate(0, titlePainter.height + 12);
-    messagePainter.paint(canvas, cursor);
-  }
 }

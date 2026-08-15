@@ -4,8 +4,8 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 
 import 'package:oyun1/oyun1.dart';
-import '/parts/effect/DeathrRing.dart';
-import 'effect/growingCircle.dart';
+import '/parts/effect/death_ring.dart';
+import 'effect/growing_circle.dart';
 import 'arrow.dart';
 
 class Portal extends PositionComponent
@@ -21,7 +21,6 @@ class Portal extends PositionComponent
 
   double rotationSpeed = 0;
 
-  // --- PATCH: Add isMasked field ---
   bool isMasked = false;
 
   Portal(this.angle, this.radius, {this.isDangerous = false}) {
@@ -32,7 +31,6 @@ class Portal extends PositionComponent
 
   @override
   void render(Canvas canvas) {
-    // --- PATCH: Use isMasked for coloring ---
     final Paint paint = Paint()
       ..color = isMasked
           ? Colors.white
@@ -182,7 +180,7 @@ class Ball extends PositionComponent with HasGameReference<RotatingArrowGame> {
 
   bool hasReachedTarget(List<Portal> portals) {
     for (var p in portals) {
-      final portalPos = center + Vector2(cos(p.angle), sin(p.angle)) * p.radius;
+      final portalPos = p.position;
       final ballPos = center + Vector2(cos(angle), sin(angle)) * radius;
 
       final distance = (portalPos - ballPos).length;
@@ -358,6 +356,65 @@ class _BallTrailPoint {
   double age = 0;
 }
 
+class VerticalMovingPortal extends Portal {
+  VerticalMovingPortal({
+    required this.side,
+    required double radius,
+    required this.phase,
+    super.isDangerous,
+  }) : super(0, radius);
+
+  final int side;
+  final double phase;
+  double _time = 0;
+
+  @override
+  void update(double dt) {
+    _time += dt;
+    final center = game.size / 2;
+    final yOffset = sin(_time * 1.45 + phase) * 92;
+    position = Vector2(center.x + side * radius, center.y + yOffset);
+    angle = atan2(position.y - center.y, position.x - center.x);
+  }
+}
+
+class RedPanel extends PositionComponent
+    with HasGameReference<RotatingArrowGame> {
+  RedPanel({required this.side, required this.radius}) {
+    size = Vector2(18, 230);
+    anchor = Anchor.center;
+    priority = -2;
+  }
+
+  final int side;
+  final double radius;
+
+  @override
+  void update(double dt) {
+    final center = game.size / 2;
+    position = Vector2(center.x + side * (radius + 34), center.y);
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final rect = Offset.zero & Size(size.x, size.y);
+    final paint = Paint()..color = const Color.fromARGB(255, 159, 44, 44);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(8)),
+      paint,
+    );
+  }
+
+  bool collidesWithBall(Ball ball) {
+    final panelRect = Rect.fromCenter(
+      center: Offset(position.x, position.y),
+      width: size.x,
+      height: size.y,
+    ).inflate(ball.size.x / 2);
+    return panelRect.contains(Offset(ball.position.x, ball.position.y));
+  }
+}
+
 // --- ORANGE ORB CLASS ---
 class OrangeOrb extends PositionComponent {
   @override
@@ -387,6 +444,10 @@ class OrangeOrb extends PositionComponent {
   bool collidesWithArrow(Arrow arrow) {
     final arrowPos = center + Vector2(cos(arrow.angle), sin(arrow.angle)) * 30;
     return (position - arrowPos).length < 25;
+  }
+
+  bool hasReachedCenter() {
+    return (position - center).length <= size.x / 2;
   }
 }
 

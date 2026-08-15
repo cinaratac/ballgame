@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 
 import 'package:oyun1/oyun1.dart';
 
-class Arrow extends PositionComponent with HasGameRef<RotatingArrowGame> {
+class Arrow extends PositionComponent with HasGameReference<RotatingArrowGame> {
+  @override
   double angle;
   double speed;
+  @override
   final Vector2 center;
 
   Arrow({required this.angle, required this.speed, required this.center}) {
@@ -22,9 +24,9 @@ class Arrow extends PositionComponent with HasGameRef<RotatingArrowGame> {
   @override
   void render(Canvas canvas) {
     final Paint paint = Paint()
-      ..color = gameRef.currentArrowSkin == 0
+      ..color = game.currentArrowSkin == 0
           ? Colors.white
-          : gameRef.currentArrowSkin == 1
+          : game.currentArrowSkin == 1
           ? Colors.amber
           : Colors.grey[800]!
       ..strokeWidth = 4

@@ -1,11 +1,11 @@
 {
-    "name": "oyun1",
-    "short_name": "oyun1",
+    "name": "Meteors VS Planets",
+    "short_name": "Meteors",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Meteors VS Planets",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 
 import 'oyun1.dart';
 import 'parts/levels.dart';
-import 'parts/ui/shopScreen.dart';
+import 'parts/tutorial_screen.dart';
+import 'parts/ui/game_hud_button.dart';
+import 'parts/ui/shop_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,11 +23,34 @@ Future<void> main() async {
       home: GameWidget(
         game: RotatingArrowGame(),
         overlayBuilderMap: {
+          'levelNavigationButtons': (context, game) {
+            final rotatingGame = game as RotatingArrowGame;
+            return Positioned(
+              bottom: gameHudButtonBottom + 58,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: LevelNavigationButtons(
+                  onPrevious: () {
+                    if (rotatingGame.currentLevel <= 1) return;
+                    rotatingGame.loadLevel(rotatingGame.currentLevel - 1);
+                  },
+                  onNext: () {
+                    if (rotatingGame.currentLevel >=
+                        RotatingArrowGame.maxLevel) {
+                      return;
+                    }
+                    rotatingGame.loadLevel(rotatingGame.currentLevel + 1);
+                  },
+                ),
+              ),
+            );
+          },
           'levelMenuButton': (context, game) {
             return Positioned(
-              bottom: 44,
-              left: _hudButtonLeft(context, 0),
-              child: _GameHudButton(
+              bottom: gameHudButtonBottom,
+              left: hudButtonLeft(context, 0),
+              child: GameHudButton(
                 icon: Icons.menu_rounded,
                 tooltip: 'Menu',
                 onPressed: () {
@@ -44,9 +69,9 @@ Future<void> main() async {
           },
           'tutorialButton': (context, game) {
             return Positioned(
-              bottom: 44,
-              left: _hudButtonLeft(context, 1),
-              child: _GameHudButton(
+              bottom: gameHudButtonBottom,
+              left: hudButtonLeft(context, 1),
+              child: GameHudButton(
                 icon: Icons.info_outline_rounded,
                 tooltip: 'Tutorial',
                 onPressed: () {
@@ -61,9 +86,9 @@ Future<void> main() async {
           },
           'shopButton': (context, game) {
             return Positioned(
-              bottom: 44,
-              left: _hudButtonLeft(context, -1),
-              child: _GameHudButton(
+              bottom: gameHudButtonBottom,
+              left: hudButtonLeft(context, -1),
+              child: GameHudButton(
                 icon: Icons.shopping_bag_rounded,
                 tooltip: 'Shop',
                 onPressed: () {
@@ -81,43 +106,4 @@ Future<void> main() async {
       ),
     ),
   );
-}
-
-double _hudButtonLeft(BuildContext context, int slot) {
-  const buttonSize = 48.0;
-  const gap = 16.0;
-  final center = MediaQuery.sizeOf(context).width / 2;
-  return center - buttonSize / 2 + slot * (buttonSize + gap);
-}
-
-class _GameHudButton extends StatelessWidget {
-  const _GameHudButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: IconButton(
-        onPressed: onPressed,
-        iconSize: 32,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-        icon: Icon(
-          icon,
-          color: Colors.white,
-          shadows: const [
-            Shadow(color: Colors.black87, blurRadius: 8, offset: Offset(0, 2)),
-          ],
-        ),
-      ),
-    );
-  }
 }

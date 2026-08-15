@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:oyun1/oyun1.dart';
 
 // --- DEATH RING CLASS ---
-class DeathRing extends PositionComponent with HasGameRef<RotatingArrowGame> {
+class DeathRing extends PositionComponent
+    with HasGameReference<RotatingArrowGame> {
   final double radius;
   final Color color;
 
@@ -26,6 +27,6 @@ class DeathRing extends PositionComponent with HasGameRef<RotatingArrowGame> {
 
   @override
   void update(double dt) {
-    position = gameRef.size / 2;
+    position = game.size / 2;
   }
 }
