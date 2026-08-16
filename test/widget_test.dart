@@ -7,4 +7,14 @@ void main() {
 
     expect(game.currentLevel, 1);
   });
+
+  test('doubled progression keeps original levels on even numbers', () {
+    expect(RotatingArrowGame.maxLevel, 90);
+    expect(RotatingArrowGame.baseLevelFor(1), 1);
+    expect(RotatingArrowGame.baseLevelFor(2), 1);
+    expect(RotatingArrowGame.baseLevelFor(89), 45);
+    expect(RotatingArrowGame.baseLevelFor(90), 45);
+    expect(RotatingArrowGame.isEasyVersionLevel(1), isTrue);
+    expect(RotatingArrowGame.isEasyVersionLevel(2), isFalse);
+  });
 }

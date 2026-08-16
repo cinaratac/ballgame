@@ -1,4 +1,4 @@
-package com.example.oyun1
+package meteorsvsplanets.kozmosoft.com
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -18,7 +18,9 @@ class FeatureTip {
 }
 
 FeatureTip? featureTipForLevel(int level) {
-  switch (level) {
+  if (!RotatingArrowGame.isFeatureIntroLevel(level)) return null;
+
+  switch (RotatingArrowGame.baseLevelFor(level)) {
     case 1:
       return const FeatureTip(
         key: 'blue_targets',
@@ -65,7 +67,7 @@ FeatureTip? featureTipForLevel(int level) {
       return const FeatureTip(
         key: 'orange_orb',
         title: 'Orange rush',
-        message: 'Hit all 5 orange orbs before any of them reaches the center.',
+        message: 'Hit every orange orb before any of them reaches the center.',
       );
     case 24:
       return const FeatureTip(

@@ -15,9 +15,24 @@ import 'parts/portal.dart';
 import 'parts/ui/level_coin_display.dart';
 import 'parts/ui/feature_tip_overlay.dart';
 import 'parts/effect/growing_circle.dart';
+import 'services/ad_service.dart';
 
 class RotatingArrowGame extends FlameGame with TapDetector {
-  static const int maxLevel = 45;
+  static const int originalLevelCount = 45;
+  static const int maxLevel = originalLevelCount * 2;
+  static const int levelProgressVersion = 2;
+
+  static int baseLevelFor(int level) {
+    return ((level + 1) ~/ 2).clamp(1, originalLevelCount).toInt();
+  }
+
+  static bool isEasyVersionLevel(int level) {
+    return level.isOdd;
+  }
+
+  static bool isFeatureIntroLevel(int level) {
+    return level == baseLevelFor(level) * 2 - 1;
+  }
 
   @override
   bool isLoaded = false;
@@ -129,13 +144,26 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
     // Restore currentLevel from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    final savedLevel = (prefs.getInt('currentLevel') ?? currentLevel)
+    final hasSavedLevel = prefs.containsKey('currentLevel');
+    final savedProgressVersion =
+        prefs.getInt('levelProgressVersion') ??
+        (hasSavedLevel ? 1 : levelProgressVersion);
+    var savedLevel = (prefs.getInt('currentLevel') ?? currentLevel)
         .clamp(1, maxLevel)
         .toInt();
-    final savedUnlocked = prefs.getInt('highestUnlockedLevel');
-    highestUnlockedLevel = (savedUnlocked ?? savedLevel)
+    var savedUnlocked = (prefs.getInt('highestUnlockedLevel') ?? savedLevel)
         .clamp(1, maxLevel)
         .toInt();
+
+    if (hasSavedLevel && savedProgressVersion < levelProgressVersion) {
+      savedLevel = (savedLevel * 2).clamp(1, maxLevel).toInt();
+      savedUnlocked = (savedUnlocked * 2).clamp(1, maxLevel).toInt();
+      await prefs.setInt('currentLevel', savedLevel);
+      await prefs.setInt('highestUnlockedLevel', savedUnlocked);
+    }
+    await prefs.setInt('levelProgressVersion', levelProgressVersion);
+
+    highestUnlockedLevel = savedUnlocked;
     currentLevel = savedLevel.clamp(1, highestUnlockedLevel).toInt();
     _notifyLevelProgress();
 
@@ -235,22 +263,31 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('currentLevel', currentLevel);
     await prefs.setInt('highestUnlockedLevel', highestUnlockedLevel);
+    await prefs.setInt('levelProgressVersion', levelProgressVersion);
     _notifyLevelProgress();
   }
 
-  Future<void> _unlockThroughLevel(int level) async {
+  Future<bool> _unlockThroughLevel(int level) async {
     final clampedLevel = level.clamp(1, maxLevel).toInt();
-    if (clampedLevel <= highestUnlockedLevel) return;
+    if (clampedLevel <= highestUnlockedLevel) return false;
     highestUnlockedLevel = clampedLevel;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('highestUnlockedLevel', highestUnlockedLevel);
+    await prefs.setInt('levelProgressVersion', levelProgressVersion);
     _notifyLevelProgress();
+    return true;
+  }
+
+  Future<void> _showUnlockAdIfNeeded(bool didUnlock, int unlockedLevel) async {
+    if (!didUnlock) return;
+    await AdService.instance.showAfterLevelUnlockIfReady(unlockedLevel);
   }
 
   Future<void> unlockAllLevels() async {
     highestUnlockedLevel = maxLevel;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('highestUnlockedLevel', highestUnlockedLevel);
+    await prefs.setInt('levelProgressVersion', levelProgressVersion);
     _notifyLevelProgress();
   }
 
@@ -275,17 +312,37 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     add(_activeFeatureTip!);
   }
 
+  int baseLevelForCurrentLevel() {
+    return baseLevelFor(currentLevel);
+  }
+
+  bool isEasyVersionForLevel(int level) {
+    return isEasyVersionLevel(level);
+  }
+
+  bool hasDeathRingForLevel(int level) {
+    final baseLevel = baseLevelFor(level);
+    if (baseLevel >= 40) return level > 88;
+    return (baseLevel >= 13 && baseLevel <= 20) || baseLevel > 36;
+  }
+
+  bool _isOrangeChallengeLevel(int level) {
+    return baseLevelFor(level) == 20;
+  }
+
   void _dismissFeatureTip() {
     _activeFeatureTip?.removeFromParent();
     _activeFeatureTip = null;
   }
 
   double _arrowSpeedForLevel(int level) {
-    final speedLevel = level <= 6 ? 6 : level;
+    final baseLevel = baseLevelFor(level);
+    final speedLevel = baseLevel <= 6 ? 6 : baseLevel;
     final speed = speedLevel <= 23
         ? rotationSpeed + speedLevel * 0.2
         : rotationSpeed + 23 * 0.2;
-    return level >= 21 ? speed * 0.75 : speed;
+    final balancedSpeed = baseLevel >= 21 ? speed * 0.75 : speed;
+    return isEasyVersionLevel(level) ? balancedSpeed * 0.82 : balancedSpeed;
   }
 
   void _clearCountdown() {
@@ -325,24 +382,48 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     balls.removeAt(index);
   }
 
-  bool _isSideMovementLevel(int level) => level >= 40 && level <= maxLevel;
+  bool _isSideMovementLevel(int level) {
+    final baseLevel = baseLevelFor(level);
+    return baseLevel >= 40 && baseLevel <= originalLevelCount;
+  }
 
   int _dangerPenaltyForLevel(int level) {
-    final baseMin = -10 - level;
-    final baseMax = -5 - level;
+    final baseLevel = baseLevelFor(level);
+    final baseMin = -10 - baseLevel;
+    final baseMax = -5 - baseLevel;
     final range = baseMax - baseMin + 1;
     final rawPenalty = range > 0 ? baseMin + _random.nextInt(range) : baseMin;
-    return -max(1, (rawPenalty.abs() * 0.5).round());
+    final penaltyScale = isEasyVersionLevel(level) ? 0.35 : 0.5;
+    return -max(1, (rawPenalty.abs() * penaltyScale).round());
   }
 
   Future<void> _setupSideMovementLevel(int level, Vector2 center) async {
-    final sideDangerIndex = level == 41 ? 1 : -1;
-    for (int i = 0; i < 4; i++) {
-      final side = i < 2 ? -1 : 1;
+    final baseLevel = baseLevelFor(level);
+    final isEasyVersion = isEasyVersionLevel(level);
+    final sideDangerIndex = !isEasyVersion && baseLevel == 41 ? 1 : -1;
+    final sideMoverCount = isEasyVersion
+        ? switch (baseLevel) {
+            40 => 2,
+            41 => 3,
+            _ => 4,
+          }
+        : 4;
+
+    for (int i = 0; i < sideMoverCount; i++) {
+      final side = switch (sideMoverCount) {
+        2 => i == 0 ? -1 : 1,
+        3 => i == 1 ? 1 : -1,
+        _ => i < 2 ? -1 : 1,
+      };
+      final phase = switch (sideMoverCount) {
+        2 => i == 0 ? 0.0 : pi,
+        3 => i == 2 ? pi : 0.0,
+        _ => i.isEven ? 0.0 : pi,
+      };
       final portal = VerticalMovingPortal(
         side: side,
         radius: portalRadius,
-        phase: i.isEven ? 0 : pi,
+        phase: phase,
         isDangerous: i == sideDangerIndex,
       );
       portal.score = portal.isDangerous
@@ -353,7 +434,32 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       add(portal);
     }
 
-    if (level == 42 || level == 44 || level == 45) {
+    void addOrbitPortal({
+      required double angle,
+      required bool isDangerous,
+      double speed = 0.72,
+    }) {
+      final portal = Portal(angle, portalRadius, isDangerous: isDangerous)
+        ..score = isDangerous
+            ? _dangerPenaltyForLevel(level)
+            : _random.nextInt(5) + 1
+        ..rotationSpeed = isEasyVersion ? speed * 0.72 : speed;
+      portals.add(portal);
+      add(portal);
+    }
+
+    if (level == 81) {
+      addOrbitPortal(angle: -pi / 2, isDangerous: true);
+    } else if (level == 83) {
+      addOrbitPortal(angle: -pi / 2, isDangerous: true);
+      addOrbitPortal(angle: pi / 2, isDangerous: true);
+    } else if (level == 87) {
+      addOrbitPortal(angle: -pi / 2, isDangerous: true);
+      addOrbitPortal(angle: pi / 2, isDangerous: false);
+    }
+
+    if (!isEasyVersion &&
+        (baseLevel == 42 || baseLevel == 44 || baseLevel == 45)) {
       final redOrbit = Portal(-pi / 2, portalRadius, isDangerous: true)
         ..score = _dangerPenaltyForLevel(level)
         ..rotationSpeed = 0.72;
@@ -361,17 +467,33 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       add(redOrbit);
     }
 
-    if (level == 45) {
+    if (baseLevel == 45) {
       final blueOrbit = Portal(pi / 2, portalRadius)
         ..score = _random.nextInt(5) + 1
-        ..rotationSpeed = 0.72;
+        ..rotationSpeed = isEasyVersion ? 0.52 : 0.72;
       portals.add(blueOrbit);
       add(blueOrbit);
     }
 
-    if (level == 43 || level == 44 || level == 45) {
-      add(RedPanel(side: -1, radius: portalRadius));
-      add(RedPanel(side: 1, radius: portalRadius));
+    if (!hasDeathRingForLevel(level)) {
+      if (isEasyVersion && baseLevel == 43) {
+        add(RedPanel(side: -1, radius: portalRadius));
+      } else if (isEasyVersion && (baseLevel == 44 || baseLevel == 45)) {
+        add(RedPanel(side: -1, radius: portalRadius));
+        add(RedPanel(side: 1, radius: portalRadius));
+      } else if (baseLevel == 43 || baseLevel == 44 || baseLevel == 45) {
+        add(RedPanel(side: -1, radius: portalRadius));
+        add(RedPanel(side: 1, radius: portalRadius));
+      }
+    }
+
+    if (hasDeathRingForLevel(level)) {
+      add(
+        DeathRing(
+          radius: min(size.x, size.y) / 2,
+          color: const Color.fromARGB(255, 159, 44, 44),
+        ),
+      );
     }
 
     arrow.speed = _arrowSpeedForLevel(level);
@@ -395,20 +517,26 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     _startOrangeChallenge();
   }
 
+  int _orangeChallengeTargetCountForLevel(int level) {
+    return isEasyVersionLevel(level) ? 3 : 5;
+  }
+
   void _startOrangeChallenge() {
     _orangeChallengeTimer?.cancel();
     _orangeChallengeSpawned = 0;
     _orangeChallengeHits = 0;
+    final targetCount = _orangeChallengeTargetCountForLevel(currentLevel);
+    final intervalMs = (9000 / targetCount).round();
 
     _spawnOrangeChallengeOrb();
     _orangeChallengeTimer = dart_async.Timer.periodic(
-      const Duration(milliseconds: 1800),
+      Duration(milliseconds: intervalMs),
       (timer) {
-        if (!isLoaded || currentLevel != 20) {
+        if (!isLoaded || !_isOrangeChallengeLevel(currentLevel)) {
           timer.cancel();
           return;
         }
-        if (_orangeChallengeSpawned >= 5) {
+        if (_orangeChallengeSpawned >= targetCount) {
           timer.cancel();
           _orangeChallengeTimer = null;
           return;
@@ -419,7 +547,10 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   }
 
   void _spawnOrangeChallengeOrb() {
-    if (_orangeChallengeSpawned >= 5) return;
+    if (_orangeChallengeSpawned >=
+        _orangeChallengeTargetCountForLevel(currentLevel)) {
+      return;
+    }
     final orange = OrangeOrb(
       angle: _random.nextDouble() * 2 * pi,
       center: size / 2,
@@ -430,7 +561,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
   Future<void> _handleOrangeChallengeHit() async {
     _orangeChallengeHits++;
-    hitMessageText.text = 'Orange $_orangeChallengeHits/5';
+    final targetCount = _orangeChallengeTargetCountForLevel(currentLevel);
+    hitMessageText.text = 'Orange $_orangeChallengeHits/$targetCount';
     hitMessageText.textRenderer = TextPaint(
       style: const TextStyle(
         color: Colors.orangeAccent,
@@ -440,13 +572,14 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     );
     hitMessageTimer = 0;
 
-    if (_orangeChallengeHits < 5) return;
+    if (_orangeChallengeHits < targetCount) return;
 
     _orangeChallengeTimer?.cancel();
     _orangeChallengeTimer = null;
     _clearOrangeOrbs();
     final nextLevel = (currentLevel + 1).clamp(1, maxLevel).toInt();
-    await _unlockThroughLevel(nextLevel);
+    final didUnlock = await _unlockThroughLevel(nextLevel);
+    await _showUnlockAdIfNeeded(didUnlock, nextLevel);
     currentLevel = nextLevel;
     add(
       GrowingCircleEffect(
@@ -554,6 +687,8 @@ class RotatingArrowGame extends FlameGame with TapDetector {
   void _setupLevel(int level) async {
     isLoaded = false;
     currentLevel = level;
+    final baseLevel = baseLevelFor(level);
+    final isEasyVersion = isEasyVersionLevel(level);
     _dismissFeatureTip();
     allowShooting = true;
     directionSwapTimer?.cancel();
@@ -574,7 +709,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       remove(child);
     }
 
-    if (level == 20) {
+    if (_isOrangeChallengeLevel(level)) {
       await _setupOrangeChallengeLevel();
       return;
     }
@@ -590,7 +725,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     int numDangerous = 0;
     int? exactBlueCount;
 
-    switch (level) {
+    switch (baseLevel) {
       case 1:
         newPortalCount = 4;
         numDangerous = 0;
@@ -628,12 +763,12 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         numDangerous = 4;
         break;
       case 11:
-        newPortalCount = portalCount + level - 4;
+        newPortalCount = portalCount + baseLevel - 4;
         exactBlueCount = 2;
         numDangerous = newPortalCount - exactBlueCount;
         break;
       case 12:
-        newPortalCount = portalCount + level - 4;
+        newPortalCount = portalCount + baseLevel - 4;
         exactBlueCount = 4;
         numDangerous = newPortalCount - exactBlueCount;
         break;
@@ -642,7 +777,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         numDangerous = 0;
         break;
       case 14:
-        final originalPortalCount = portalCount + level - 4;
+        final originalPortalCount = portalCount + baseLevel - 4;
         final defaultDangerousCount = (originalPortalCount / 3).round();
         final defaultBlueCount = originalPortalCount - defaultDangerousCount;
         exactBlueCount = (defaultBlueCount / 2).round();
@@ -660,7 +795,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       case 23:
       case 24:
       case 25:
-        final originalPortalCount = portalCount + level - 4;
+        final originalPortalCount = portalCount + baseLevel - 4;
         final defaultDangerousCount = (originalPortalCount / 3).round();
         final defaultBlueCount = originalPortalCount - defaultDangerousCount;
         exactBlueCount = (defaultBlueCount / 2).round();
@@ -685,13 +820,24 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       case 38:
       case 39:
         newPortalCount =
-            4 + (level - 26) ~/ 2; // gradually increase number of balls
+            4 + (baseLevel - 26) ~/ 2; // gradually increase number of balls
         numDangerous = newPortalCount ~/ 2;
         break;
       default:
-        newPortalCount = portalCount + level - 4;
+        newPortalCount = portalCount + baseLevel - 4;
         numDangerous = (newPortalCount / 3)
             .round(); // kırmızı sayısını maviye göre dengeli ayarla
+    }
+
+    if (isEasyVersion) {
+      final blueCount = exactBlueCount ?? newPortalCount - numDangerous;
+      final easyBlueCount = max(1, (blueCount * 0.72).ceil());
+      final easyDangerousCount = numDangerous == 0
+          ? 0
+          : max(1, (numDangerous * 0.5).floor());
+      exactBlueCount = easyBlueCount;
+      numDangerous = easyDangerousCount;
+      newPortalCount = easyBlueCount + easyDangerousCount;
     }
 
     bool hasThreeAdjacent(Set<int> set, int total) {
@@ -747,23 +893,29 @@ class RotatingArrowGame extends FlameGame with TapDetector {
         portal.score = _random.nextInt(5) + 1;
       }
 
-      if (level >= 5 && level != 13 && level != 14 && level != 26) {
+      if (baseLevel >= 5 &&
+          baseLevel != 13 &&
+          baseLevel != 14 &&
+          baseLevel != 26) {
         double spinSpeed;
-        if (level <= 25) {
-          spinSpeed = 0.4 + level * 0.035;
-        } else if (level >= 27 && level <= 39) {
-          final spinLevel = min(level, 36);
+        if (baseLevel <= 25) {
+          spinSpeed = 0.4 + baseLevel * 0.035;
+        } else if (baseLevel >= 27 && baseLevel <= 39) {
+          final spinLevel = min(baseLevel, 36);
           spinSpeed = 0.1 + (spinLevel - 27) * 0.1;
-          if (level >= 36) {
+          if (baseLevel >= 36) {
             spinSpeed *= 0.85;
           }
         } else {
-          spinSpeed = 0.4 + (level - 25) * 0.02 + 0.4 + 25 * 0.035;
+          spinSpeed = 0.4 + (baseLevel - 25) * 0.02 + 0.4 + 25 * 0.035;
         }
-        if (level >= 15 && level <= 25) {
+        if (baseLevel >= 15 && baseLevel <= 25) {
           spinSpeed *= 0.7;
         }
-        if (level == 8) {
+        if (isEasyVersion) {
+          spinSpeed *= 0.72;
+        }
+        if (baseLevel == 8) {
           portal.rotationSpeed = -spinSpeed; // Sadece level 8 ters döner
         } else {
           portal.rotationSpeed = spinSpeed; // Diğerleri normal döner
@@ -775,7 +927,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       add(portal);
     }
 
-    if (currentLevel >= 6 && _random.nextDouble() < 1 / 3 && level != 10) {
+    if (baseLevel >= 6 && _random.nextDouble() < 1 / 3 && baseLevel != 10) {
       final nonDangerous = portals
           .where((p) => !p.isDangerous && !p.isGreen)
           .toList();
@@ -786,7 +938,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       }
     }
 
-    if (currentLevel >= 20 && _random.nextDouble() < 1 / 5 && level != 10) {
+    if (baseLevel >= 20 && _random.nextDouble() < 1 / 5 && baseLevel != 10) {
       final scheduledLevel = currentLevel;
       Future.delayed(Duration(seconds: _random.nextInt(5) + 2), () {
         // Only spawn a new orange orb if none is active
@@ -800,7 +952,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
       });
     }
 
-    if ((level >= 13 && level <= 20) || level > 36) {
+    if (hasDeathRingForLevel(level)) {
       final deathRing = DeathRing(
         radius: min(size.x, size.y) / 2,
         color: const Color.fromARGB(255, 159, 44, 44),
@@ -810,20 +962,20 @@ class RotatingArrowGame extends FlameGame with TapDetector {
 
     arrow.speed = baseSpeed;
     directionSwapTimer?.cancel();
-    if (level >= 18 && level <= 20) {
+    if (baseLevel >= 18 && baseLevel <= 20) {
       directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 10), (
         _,
       ) {
         startSmoothDirectionSwap(portals);
       });
-    } else if (level == 24 || level == 25) {
+    } else if (baseLevel == 24 || baseLevel == 25) {
       directionSwapTimer = dart_async.Timer.periodic(Duration(seconds: 5), (_) {
         startSmoothDirectionSwap(portals);
       });
-    } else if (level == 26) {
+    } else if (baseLevel == 26) {
       // No rotation and no direction swap
       _startShootingCountdown();
-    } else if (level >= 27 && level <= 39) {
+    } else if (baseLevel >= 27 && baseLevel <= 39) {
       _startShootingCountdown();
     }
 
@@ -990,15 +1142,19 @@ class RotatingArrowGame extends FlameGame with TapDetector {
                         final nextLevel = (currentLevel + 1)
                             .clamp(1, maxLevel)
                             .toInt();
-                        await _unlockThroughLevel(nextLevel);
+                        var didUnlock = await _unlockThroughLevel(nextLevel);
                         currentLevel = nextLevel;
                         final prefs = await SharedPreferences.getInstance();
                         bool level10Played =
                             prefs.getBool('coinLevel10Played') ?? false;
-                        if (currentLevel == 10 && level10Played) {
-                          await _unlockThroughLevel(11);
-                          currentLevel = 11;
+                        if (baseLevelFor(currentLevel) == 10 && level10Played) {
+                          final nextBaseLevel = baseLevelFor(currentLevel) + 1;
+                          currentLevel = nextBaseLevel * 2 - 1;
+                          didUnlock =
+                              await _unlockThroughLevel(currentLevel) ||
+                              didUnlock;
                         }
+                        await _showUnlockAdIfNeeded(didUnlock, currentLevel);
                         add(
                           GrowingCircleEffect(
                             center: size / 2,
@@ -1066,7 +1222,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
           activeOrangeOrb = null;
         }
         _removeBallAt(i);
-        if (currentLevel == 20) {
+        if (_isOrangeChallengeLevel(currentLevel)) {
           dart_async.unawaited(_handleOrangeChallengeHit());
         }
         break orangeCollision;
@@ -1076,7 +1232,7 @@ class RotatingArrowGame extends FlameGame with TapDetector {
     // --- Orange Orb collision with center / Arrow ---
     for (final orangeOrb in children.whereType<OrangeOrb>().toList()) {
       if (!children.contains(orangeOrb)) continue;
-      if (currentLevel == 20) {
+      if (_isOrangeChallengeLevel(currentLevel)) {
         if (orangeOrb.hasReachedCenter()) {
           orangeOrb.removeFromParent();
           _restartOrangeChallenge();

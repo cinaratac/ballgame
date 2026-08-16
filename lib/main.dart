@@ -1,3 +1,5 @@
+import 'dart:async' as dart_async;
+
 import 'package:flame/flame.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +10,7 @@ import 'parts/levels.dart';
 import 'parts/tutorial_screen.dart';
 import 'parts/ui/game_hud_button.dart';
 import 'parts/ui/shop_screen.dart';
+import 'services/ad_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +19,6 @@ Future<void> main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -110,4 +112,5 @@ Future<void> main() async {
       ),
     ),
   );
+  dart_async.unawaited(AdService.instance.initialize());
 }

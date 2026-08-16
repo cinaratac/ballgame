@@ -7,3 +7,6 @@ build/
 .idea/
 *.iml
 .DS_Store
+android/key.properties
+android/app/*.jks
+android/app/*.keystore

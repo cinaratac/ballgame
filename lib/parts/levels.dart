@@ -31,13 +31,29 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
 
   Future<void> _loadCurrentLevel() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedLevel = (prefs.getInt('currentLevel') ?? 1)
+    final hasSavedLevel = prefs.containsKey('currentLevel');
+    final savedProgressVersion =
+        prefs.getInt('levelProgressVersion') ??
+        (hasSavedLevel ? 1 : RotatingArrowGame.levelProgressVersion);
+    var savedLevel = (prefs.getInt('currentLevel') ?? 1)
         .clamp(1, _levelCount)
         .toInt();
-    final savedUnlocked = prefs.getInt('highestUnlockedLevel');
-    final highestUnlocked = (savedUnlocked ?? savedLevel)
+    var highestUnlocked = (prefs.getInt('highestUnlockedLevel') ?? savedLevel)
         .clamp(1, _levelCount)
         .toInt();
+
+    if (hasSavedLevel &&
+        savedProgressVersion < RotatingArrowGame.levelProgressVersion) {
+      savedLevel = (savedLevel * 2).clamp(1, _levelCount).toInt();
+      highestUnlocked = (highestUnlocked * 2).clamp(1, _levelCount).toInt();
+      await prefs.setInt('currentLevel', savedLevel);
+      await prefs.setInt('highestUnlockedLevel', highestUnlocked);
+    }
+    await prefs.setInt(
+      'levelProgressVersion',
+      RotatingArrowGame.levelProgressVersion,
+    );
+
     if (!mounted) return;
     setState(() {
       _highestUnlockedLevel = highestUnlocked;
@@ -49,6 +65,10 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
     if (level > _highestUnlockedLevel) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('currentLevel', level);
+    await prefs.setInt(
+      'levelProgressVersion',
+      RotatingArrowGame.levelProgressVersion,
+    );
 
     if (!mounted) return;
     setState(() {
@@ -149,6 +169,10 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> {
   Future<void> _unlockAllLevelsForTesting() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('highestUnlockedLevel', _levelCount);
+    await prefs.setInt(
+      'levelProgressVersion',
+      RotatingArrowGame.levelProgressVersion,
+    );
     if (!mounted) return;
     setState(() {
       _highestUnlockedLevel = _levelCount;
@@ -433,14 +457,17 @@ class _LevelNode extends StatelessWidget {
   }
 
   List<_LevelMarker> _markersForLevel(int level) {
+    if (!RotatingArrowGame.isFeatureIntroLevel(level)) return [];
+    final baseLevel = RotatingArrowGame.baseLevelFor(level);
+
     return [
-      if (level == 5) _LevelMarker.spin,
-      if (level == 8) _LevelMarker.reverse,
-      if (level == 13 || level == 37) _LevelMarker.ring,
-      if (level == 18 || level == 24) _LevelMarker.swap,
-      if (level == 26) _LevelMarker.memory,
-      if (level == 40) _LevelMarker.vertical,
-      if (level == 43) _LevelMarker.panel,
+      if (baseLevel == 5) _LevelMarker.spin,
+      if (baseLevel == 8) _LevelMarker.reverse,
+      if (baseLevel == 13 || baseLevel == 37) _LevelMarker.ring,
+      if (baseLevel == 18 || baseLevel == 24) _LevelMarker.swap,
+      if (baseLevel == 26) _LevelMarker.memory,
+      if (baseLevel == 40) _LevelMarker.vertical,
+      if (baseLevel == 43) _LevelMarker.panel,
     ];
   }
 }

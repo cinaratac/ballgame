@@ -125,10 +125,8 @@ class Ball extends PositionComponent with HasGameReference<RotatingArrowGame> {
     } else {
       hitTimer += dt;
     }
-    // DeathRing exists on levels 13-20 and 37+, so collision must match.
-    if (!hit &&
-        ((game.currentLevel >= 13 && game.currentLevel <= 20) ||
-            game.currentLevel > 36)) {
+    // DeathRing collision follows the mapped 90-level progression.
+    if (!hit && game.hasDeathRingForLevel(game.currentLevel)) {
       final ballCenter = position;
       final centerToBall = (ballCenter - game.size / 2).length;
       final deathRing = game.children.whereType<DeathRing>().firstOrNull;
